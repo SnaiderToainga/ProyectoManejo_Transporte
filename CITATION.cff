@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "Si utiliza este software o repositorio para fines académicos, por favor cítelo utilizando los siguientes metadatos."
+title: "Sistema Web para Gestión y Venta de Pasajes Interprovinciales en Ecuador"
+abstract: "Aplicación desarrollada bajo buenas prácticas de Gestión de la Configuración del Software (SCM), control de versiones con Gitflow y trazabilidad de cambios para el transporte interprovincial ecuatoriano."
+type: software
+version: 1.0.0
+date-released: 2026-10-09
+license: GPL-3.0
+institution:
+  name: "Universidad Técnica de Ambato"
+  department: "Facultad de Ingeniería en Sistemas, Electrónica e Industrial (FISEI)"
+authors:
+  - family-names: "Snaider"
+    role: "Líder de Proyecto & Gobernanza SCM"
+  - family-names: "Cristian"
+    role: "Backend Core & Arquitectura de Datos"
+  - family-names: "Cesar"
+    role: "Backend Transaccional & Pagos"
+  - family-names: "Sonia"
+    role: "Frontend Cliente & Mapa de Asientos"
+  - family-names: "Daky"
+    role: "Frontend Oficinista & Taquilla"
+  - family-names: "Joel"
+    role: "QA, Auditoría SCM & SuperAdmin"
+url: "https://github.com/SnaiderToainga/ProyectoManejo_Transporte"
