@@ -1,14 +1,21 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Rutas de catálogo y frecuencias
+// Servir la carpeta de comprobantes de forma estática
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Rutas
 const catalogRoutes = require('./routes/catalogRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
+
 app.use('/api', catalogRoutes);
+app.use('/api', bookingRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
