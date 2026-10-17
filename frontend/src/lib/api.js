@@ -33,4 +33,10 @@ export const api = {
   trips: (date, signal) => call('trips', [date], () => request(`/viajes?fecha=${encodeURIComponent(date)}`, { signal })),
   cooperatives: (signal) => call('cooperatives', [], () => request('/cooperativas', { signal })),
   seats: (id, signal) => call('seats', [id], () => request(`/viajes/${encodeURIComponent(id)}/asientos`, { signal })),
+  reserve: (payload) => call('reserve', [payload], () => request('/reservas', { method: 'POST', body: JSON.stringify(payload) })),
+  reservation: (code, signal) => call('reservation', [code], () => request(`/reservas/${encodeURIComponent(code)}`, { signal })),
+  receipt: (code, file) => call('receipt', [code, file], () => {
+    const body = new FormData(); body.append('comprobante', file);
+    return request(`/reservas/${encodeURIComponent(code)}/comprobante`, { method: 'POST', body });
+  }),
 };

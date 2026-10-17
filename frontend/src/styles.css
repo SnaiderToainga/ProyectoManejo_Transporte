@@ -123,6 +123,21 @@ hr { border: 0; border-top: 1px solid #e0e6db; margin: 22px 0; }
 .reservation-timer span { font-size: 12px; }
 .reservation-timer strong { display: block; font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
 .reservation-timer.urgent { background: #fff0e7; border-color: #e8c2a7; color: #9b4d29; }
+.passenger-fields { border: 0; margin: 0 0 24px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.passenger-fields legend { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 700; font-size: 15px; margin-bottom: 18px; padding-top: 8px; }
+.inline-icon { display: inline; vertical-align: middle; margin-right: 4px; }
+.reservation-code { padding: 18px; background: #f3f5ee; border-radius: 10px; margin-bottom: 20px; }
+.reservation-code > span { font-size: 12px; }
+.reservation-code strong { display: block; font-size: 23px; letter-spacing: 2px; margin: 7px 0; overflow-wrap: anywhere; }
+.reservation-code p { font-size: 11px; color: #74836a; margin: 0; }
+.bank-details { margin-block: 20px; font-size: 13px; }
+.bank-details > div { display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e9ede3; }
+.bank-details dt { color: #758469; }.bank-details dd { margin: 0; overflow-wrap: anywhere; }
+.file-field { padding: 22px; border: 1px dashed #aebfa5; border-radius: 10px; background: #fbfcf8; align-items: center; text-align: center; margin: 20px 0; }
+.file-field input { font-size: 12px; background: white; }
+.file-field input::file-selector-button { background: #e9efdf; border: 0; padding: 8px; border-radius: 6px; margin-right: 8px; cursor: pointer; }
+.file-name { overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 640px) { .passenger-fields { grid-template-columns: 1fr; } .passenger-fields legend { flex-wrap: wrap; } }
 @media (max-width: 760px) { .flow-layout { grid-template-columns: 1fr; } .summary { position: static; } .seat-panel { padding: 18px; } }
 @media (max-width: 1000px) { .header-note { display: none; } .header-inner { justify-content: space-between; } .search-main { grid-template-columns: 1fr 1fr; } .trip-card { grid-template-columns: 1fr 1fr; } .trip-price { grid-column: 2; } .trip-route { grid-column: 1; margin-top: 16px; } .trip-tags { grid-column: 1; } .journey-art { transform: scale(.9); } }
 @media (max-width: 640px) { .shell { width: calc(100% - 32px); } .header-inner { min-height: 78px; gap: 15px; } .brand { font-size: 24px; } .brand-symbol { padding: 8px; } nav { gap: 14px; } .nav-link { font-size: 12px; } .hero { grid-template-columns: 1fr; padding: 32px 0; min-height: auto; } .hero h1 { font-size: 44px; } .journey-art { display: none; } .search-main { padding: 18px; gap: 16px; } .search-main label:nth-child(3), .search-button { grid-column: 1 / -1; } .search-filters { padding: 15px 18px; gap: 10px; } .filter-heading { width: 100%; } .search-filters > label:not(.time-filter) { flex: 1; min-width: 120px; } .section-heading { flex-direction: column; align-items: start; } .trip-card { padding: 18px; column-gap: 12px; } .trip-price { padding-left: 14px; } .trip-price .button { padding: 10px; font-size: 11px; } .trip-price .button svg { display: none; } .operator { gap: 8px; } .operator-icon { display: none; } .trip-route { grid-template-columns: 1fr; gap: 4px; } .route-arrow { display: none; } .trip-route span:last-child::before { content: '→ '; } .trip-tags { flex-wrap: wrap; } .how-it-works { grid-template-columns: 1fr; gap: 20px; } .site-footer { flex-direction: column; justify-content: center; gap: 8px; } }
