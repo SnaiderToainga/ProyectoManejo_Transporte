@@ -29,4 +29,3 @@ export default function BusSeatGrid({ capacity, seats, selected = [], onToggle, 
     </div>
   </div>;
 }
-
