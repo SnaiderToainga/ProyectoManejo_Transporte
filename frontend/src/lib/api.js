@@ -39,4 +39,16 @@ export const api = {
     const body = new FormData(); body.append('comprobante', file);
     return request(`/reservas/${encodeURIComponent(code)}/comprobante`, { method: 'POST', body });
   }),
+  ticket: async (code, ticketId) => {
+    if (isDemo) throw new ApiError('El PDF se descarga únicamente para reservas reales pagadas.');
+    let response;
+    try { response = await fetch(`${baseUrl}/reservas/${encodeURIComponent(code)}/boletos/${encodeURIComponent(ticketId)}/pdf`, { signal: AbortSignal.timeout(20000) }); }
+    catch { throw new ApiError('No pudimos descargar el boleto. Intenta nuevamente.'); }
+    const type = response.headers.get('content-type') || '';
+    if (!response.ok || !type.includes('application/pdf')) {
+      const data = type.includes('application/json') ? await response.json() : {};
+      throw new ApiError(data.error || 'El boleto todavía no está disponible para descargar.', response.status);
+    }
+    return response.blob();
+  },
 };

@@ -23,6 +23,7 @@ export const demoApi = {
     return { reserva };
   },
   reservation: async (code) => {
+    if (code === 'DEMO-PAGADO') return { ...trips[0], codigo_reserva: code, estado: 'PAGADO', fecha_viaje: new Date().toISOString().slice(0, 10), total: 4.5, boletos: [{ id: 1, numero_asiento: 9, nombre_pasajero: 'Pasajero de ejemplo', cedula_pasajero: '0000000000', categoria: 'NORMAL', precio: 4.5 }] };
     const reservation = reservations.get(code);
     if (!reservation) throw new Error('No encontramos esa reserva de demostración. Las reservas de prueba se reinician al recargar la página.');
     return { ...reservation };

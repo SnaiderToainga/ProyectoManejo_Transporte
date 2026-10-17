@@ -16,6 +16,6 @@ export function reservationStatus(reservation, now = Date.now()) {
   }
   return 'unknown';
 }
-const codeKey = 'transporte-uta-reserva';
-export function rememberCode(code) { try { sessionStorage.setItem(codeKey, code); } catch { /* El modo privado puede bloquear el almacenamiento. */ } }
-export function recalledCode() { try { return sessionStorage.getItem(codeKey) || ''; } catch { return ''; } }
+function codeKey() { return `transporte-uta-reserva${new URLSearchParams(window.location.search).get('demo') === '1' ? '-demo' : ''}`; }
+export function rememberCode(code) { try { sessionStorage.setItem(codeKey(), code); } catch { /* El modo privado puede bloquear el almacenamiento. */ } }
+export function recalledCode() { try { return sessionStorage.getItem(codeKey()) || ''; } catch { return ''; } }
