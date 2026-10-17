@@ -1,4 +1,6 @@
 // Datos ficticios disponibles únicamente al abrir ?demo=1. Nunca sustituyen un error de la API.
+import { today } from './format.js';
+let selectedDate = today();
 const reservations = new Map();
 const trips = [
   { programacion_id: 1, origen: 'Ambato', destino: 'Quito (Quitumbe)', hora_salida_programada: '07:00:00', precio_base: '4.50', capacidad: 40, tiene_bano_posterior: true, cooperativa_nombre: 'Cooperativa de Transportes CITA', numero_disco: 15, placa: 'DEMO-015', resolucion_ant: 'EJEMPLO', estado: 'PROGRAMADO' },
@@ -6,7 +8,7 @@ const trips = [
   { programacion_id: 3, origen: 'Ambato', destino: 'Guayaquil', hora_salida_programada: '10:00:00', precio_base: '9.00', capacidad: 40, tiene_bano_posterior: true, cooperativa_nombre: 'Flota Pelileo Express', numero_disco: 5, placa: 'DEMO-005', resolucion_ant: 'EJEMPLO', estado: 'PROGRAMADO' },
 ];
 export const demoApi = {
-  trips: async (date) => trips.map(trip => ({ ...trip, fecha_viaje: date })),
+  trips: async (date) => { selectedDate = date; return trips.map(trip => ({ ...trip, fecha_viaje: date })); },
   cooperatives: async () => [...new Set(trips.map(t => t.cooperativa_nombre))].map((nombre, i) => ({ id: i + 1, nombre })),
   seats: async (id) => {
     const trip = trips.find(t => t.programacion_id === Number(id));
@@ -18,12 +20,12 @@ export const demoApi = {
   reserve: async (payload) => {
     const trip = trips.find(t => t.programacion_id === Number(payload.programacion_id));
     const codigo_reserva = `DEMO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const reserva = { ...trip, id: Date.now(), codigo_reserva, estado: 'PENDIENTE', total: payload.pasajeros.reduce((sum, p) => sum + p.precio, 0), expira_en: new Date(Date.now() + 300000).toISOString(), fecha_viaje: new Date().toISOString().slice(0, 10), boletos: payload.pasajeros.map((p, i) => ({ ...p, id: i + 1, nombre_pasajero: p.nombre, cedula_pasajero: p.cedula, numero_asiento: p.asiento_id % 100, categoria: p.asiento_id % 100 <= 8 ? 'VIP' : 'NORMAL' })) };
+    const reserva = { ...trip, id: Date.now(), codigo_reserva, estado: 'PENDIENTE', total: payload.pasajeros.reduce((sum, p) => sum + p.precio, 0), expira_en: new Date(Date.now() + 300000).toISOString(), fecha_viaje: selectedDate, boletos: payload.pasajeros.map((p, i) => ({ ...p, id: i + 1, nombre_pasajero: p.nombre, cedula_pasajero: p.cedula, numero_asiento: p.asiento_id % 100, categoria: p.asiento_id % 100 <= 8 ? 'VIP' : 'NORMAL' })) };
     reservations.set(codigo_reserva, reserva);
     return { reserva };
   },
   reservation: async (code) => {
-    if (code === 'DEMO-PAGADO') return { ...trips[0], codigo_reserva: code, estado: 'PAGADO', fecha_viaje: new Date().toISOString().slice(0, 10), total: 4.5, boletos: [{ id: 1, numero_asiento: 9, nombre_pasajero: 'Pasajero de ejemplo', cedula_pasajero: '0000000000', categoria: 'NORMAL', precio: 4.5 }] };
+    if (code === 'DEMO-PAGADO') return { ...trips[0], codigo_reserva: code, estado: 'PAGADO', fecha_viaje: today(), total: 4.5, boletos: [{ id: 1, numero_asiento: 9, nombre_pasajero: 'Pasajero de ejemplo', cedula_pasajero: '0000000000', categoria: 'NORMAL', precio: 4.5 }] };
     const reservation = reservations.get(code);
     if (!reservation) throw new Error('No encontramos esa reserva de demostración. Las reservas de prueba se reinician al recargar la página.');
     return { ...reservation };

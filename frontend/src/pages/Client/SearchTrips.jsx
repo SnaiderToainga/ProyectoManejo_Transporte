@@ -56,8 +56,8 @@ export default function SearchTrips({ onChoose }) {
         <button className="button primary search-button" disabled={loading}><Search size={18} />{loading ? 'Buscando…' : 'Buscar viajes'}</button>
       </div>
       <div className="search-filters"><span className="filter-heading"><SlidersHorizontal size={16} /> Filtrar por</span>
-        <label><span className="sr-only">Cooperativa</span><select name="cooperativa" value={filters.cooperativa} onChange={change}><option value="">Todas las cooperativas</option>{cooperatives.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>
-        <label><span className="sr-only">Tipo de asiento</span><select name="categoria" value={filters.categoria} onChange={change}><option value="">Cualquier asiento</option><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label>
+        <label><span className="sr-only">Cooperativa</span><select aria-label="Cooperativa" name="cooperativa" value={filters.cooperativa} onChange={change}><option value="">Todas las cooperativas</option>{cooperatives.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>
+        <label><span className="sr-only">Tipo de asiento</span><select aria-label="Tipo de asiento" name="categoria" value={filters.categoria} onChange={change}><option value="">Cualquier asiento</option><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label>
         <label className="time-filter"><span>Desde</span><input type="time" name="desde" value={filters.desde} onChange={change} /></label>
         <label className="time-filter"><span>Hasta</span><input type="time" name="hasta" value={filters.hasta} onChange={change} /></label>
       </div>
