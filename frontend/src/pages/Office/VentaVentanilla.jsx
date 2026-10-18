@@ -1,5 +1,5 @@
 import React from 'react';
-const [VentaVentanilla] = () => {
+const VentaVentanilla = () => {
   return <div>Módulo en construcción...</div>;
 };
-export default [VentaVentanilla];
+export default VentaVentanilla;

@@ -1,5 +1,5 @@
 import React from 'react';
-const [HojaRuta] = () => {
+const HojaRuta = () => {
   return <div>Módulo en construcción...</div>;
 };
-export default [HojaRuta];
+export default HojaRuta;
