@@ -107,3 +107,71 @@ exports.rechazarComprobante = async (req, res) => {
         client.release();
     }
 };
+
+
+// ==========================================
+// 2. VENTA PRESENCIAL EN VENTANILLA
+// ==========================================
+
+exports.ventaVentanilla = async (req, res) => {
+    const { 
+        frecuencia_id, 
+        asientos_ids, // Array de IDs de asientos
+        usuario_id, // ID del pasajero (o crear uno genérico para ventanilla)
+        tipo_pasajero, // 'NORMAL', 'NIÑO', 'TERCERA_EDAD', 'DISCAPACIDAD'
+        metodo_pago // 'EFECTIVO', 'TRANSFERENCIA', 'DEPOSITO'
+    } = req.body;
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Calcular el total con descuento (50% para Niño, Tercera Edad, Discapacidad)
+        const frecuenciaQuery = await client.query('SELECT precio_base FROM frecuencias WHERE id = $1', [frecuencia_id]);
+        if (frecuenciaQuery.rowCount === 0) throw new Error("Frecuencia no encontrada.");
+        
+        let precioBase = parseFloat(frecuenciaQuery.rows[0].precio_base);
+        let descuento = 1;
+        
+        if (['NIÑO', 'TERCERA_EDAD', 'DISCAPACIDAD'].includes(tipo_pasajero)) {
+            descuento = 0.5; // 50% de descuento
+        }
+
+        const precioFinal = precioBase * descuento;
+        const total = precioFinal * asientos_ids.length;
+
+        // 2. Crear la reserva directamente como PAGADO (porque es ventanilla)
+        const insertReserva = await client.query(`
+            INSERT INTO reservas (usuario_id, frecuencia_id, estado, total_pagado, metodo_pago, fecha_reserva)
+            VALUES ($1, $2, 'PAGADO', $3, $4, NOW()) RETURNING id
+        `, [usuario_id, frecuencia_id, total, metodo_pago]);
+
+        const reserva_id = insertReserva.rows[0].id;
+
+        // 3. Insertar en detalle_boletos y actualizar asientos a OCUPADO
+        for (let asiento_id of asientos_ids) {
+            // Generar QR directamente
+            const qr = `QR-VENTANILLA-${reserva_id}-${asiento_id}-${Date.now()}`;
+            
+            await client.query(`
+                INSERT INTO detalle_boletos (reserva_id, asiento_id, precio_final, codigo_qr)
+                VALUES ($1, $2, $3, $4)
+            `, [reserva_id, asiento_id, precioFinal, qr]);
+
+            await client.query(`
+                UPDATE asientos SET estado = 'OCUPADO' WHERE id = $1
+            `, [asiento_id]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ mensaje: "Venta en ventanilla registrada exitosamente.", reserva_id, total });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Error en venta ventanilla:", error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
+    }
+};
