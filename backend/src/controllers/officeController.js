@@ -175,3 +175,49 @@ exports.ventaVentanilla = async (req, res) => {
         client.release();
     }
 };
+// ==========================================
+// 3. HOJA DE RUTA DIARIA
+// ==========================================
+
+exports.getHojaRutaHoy = async (req, res) => {
+    try {
+        const query = `
+            SELECT pv.id as programacion_id, pv.estado_viaje, pv.fecha_programada,
+                   f.hora_salida, f.origen, f.destino, f.tipo_servicio,
+                   b.numero_disco, b.placa,
+                   c.nombre as cooperativa
+            FROM programacion_viajes pv
+            JOIN frecuencias f ON pv.frecuencia_id = f.id
+            JOIN buses b ON pv.bus_id = b.id
+            JOIN cooperativas c ON b.cooperativa_id = c.id
+            WHERE DATE(pv.fecha_programada) = CURRENT_DATE
+            ORDER BY f.hora_salida ASC;
+        `;
+        const result = await pool.query(query);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error al obtener hoja de ruta:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
+
+exports.actualizarEstadoViaje = async (req, res) => {
+    const { programacion_id } = req.params;
+    const { estado_viaje } = req.body; // 'PROGRAMADO', 'EN_RUTA', 'FINALIZADO'
+
+    try {
+        const result = await pool.query(
+            `UPDATE programacion_viajes SET estado_viaje = $1 WHERE id = $2 RETURNING *`,
+            [estado_viaje, programacion_id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: "Viaje no encontrado" });
+        }
+
+        res.json({ mensaje: "Estado del viaje actualizado", viaje: result.rows[0] });
+    } catch (error) {
+        console.error("Error al actualizar estado de viaje:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
