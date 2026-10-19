@@ -13,9 +13,11 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // Rutas
 const catalogRoutes = require('./routes/catalogRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 app.use('/api', catalogRoutes);
 app.use('/api', bookingRoutes);
+app.use('/api/admin', adminRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
