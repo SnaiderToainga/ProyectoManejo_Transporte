@@ -5,16 +5,24 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 const HojaRuta = () => {
   const [viajes, setViajes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   // 1. Cargar los viajes del día al montar el componente
   const fetchViajes = async () => {
     try {
       setLoading(true);
+      setError('');
       const response = await fetch(`${API_URL}/hoja-ruta`);
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `No se pudo cargar la hoja de ruta (${response.status}).`);
+      }
+      if (!Array.isArray(data)) {
+        throw new Error('El servicio devolvió una lista de viajes no válida.');
+      }
       setViajes(data);
     } catch (error) {
-      console.error("Error al cargar hoja de ruta:", error);
+      setError(error instanceof Error ? error.message : 'No se pudo cargar la hoja de ruta.');
     } finally {
       setLoading(false);
     }
@@ -65,7 +73,14 @@ const HojaRuta = () => {
       <h2 className="text-2xl font-bold mb-4 text-gray-800">Hoja de Ruta Diaria</h2>
       <p className="text-gray-500 mb-6">Viajes programados para el día de hoy. Actualiza el estado a medida que avanzan.</p>
 
-      {viajes.length === 0 ? (
+      {error ? (
+        <div className="text-red-700" role="alert">
+          <p>{error}</p>
+          <button className="mt-3 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700" onClick={fetchViajes}>
+            Reintentar
+          </button>
+        </div>
+      ) : viajes.length === 0 ? (
         <p className="text-gray-500">No hay viajes programados para hoy. 🚌</p>
       ) : (
         <div className="overflow-x-auto">
