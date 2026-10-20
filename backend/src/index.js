@@ -20,6 +20,7 @@ app.use('/api', catalogRoutes);
 app.use('/api', bookingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', officeRoutes);
+app.use('/api/oficina', officeRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

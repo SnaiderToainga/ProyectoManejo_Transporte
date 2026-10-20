@@ -6,15 +6,23 @@ const ValidacionComprobantes = () => {
   const [reservas, setReservas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalImage, setModalImage] = useState(null);
+  const [error, setError] = useState('');
 
   const fetchReservas = async () => {
     try {
       setLoading(true);
+      setError('');
       const response = await fetch(`${API_URL}/reservas-pendientes`);
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `No se pudieron cargar las reservas (${response.status}).`);
+      }
+      if (!Array.isArray(data)) {
+        throw new Error('El servicio devolvió una lista de reservas no válida.');
+      }
       setReservas(data);
     } catch (error) {
-      console.error("Error al cargar reservas:", error);
+      setError(error instanceof Error ? error.message : 'No se pudieron cargar las reservas.');
     } finally {
       setLoading(false);
     }
@@ -51,7 +59,14 @@ const ValidacionComprobantes = () => {
     <div>
       <h2 className="text-2xl font-bold mb-4 text-gray-800">Bandeja de Comprobantes Pendientes</h2>
       
-      {reservas.length === 0 ? (
+      {error ? (
+        <div className="text-red-700" role="alert">
+          <p>{error}</p>
+          <button className="mt-3 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700" onClick={fetchReservas}>
+            Reintentar
+          </button>
+        </div>
+      ) : reservas.length === 0 ? (
         <p className="text-gray-500">No hay comprobantes pendientes por validar. 🎉</p>
       ) : (
         <div className="overflow-x-auto">
