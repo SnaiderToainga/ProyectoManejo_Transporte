@@ -122,15 +122,26 @@ export default function App() {
             <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
               Taquilla / Oficina
             </button>
-            <button
-              className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
-              onClick={usuario ? (usuario.rol === 'OFICINISTA' ? goOficina : goAdmin) : goLogin}
+           <button
+            className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
+            onClick={() => {
+            if (usuario) {
+            // Si ya hay sesión, permite cerrar sesión o ir a admin
+            if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
+             localStorage.removeItem('transporte_auth');
+             setUsuario(null);
+             goLogin();
+            }
+           } else {
+           goLogin();
+           }
+             }}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                <Shield size={15} />
-                {usuario ? (usuario.rol === 'OFICINISTA' ? 'Oficinista' : 'SuperAdmin') : 'Administración'}
-              </span>
-            </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+           <Shield size={15} />
+           {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : 'Cerrar Sesión') : 'Administración'}
+             </span>
+        </button>
           </nav>
 
           <span className="header-note">

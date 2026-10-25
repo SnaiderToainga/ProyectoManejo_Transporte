@@ -18,7 +18,7 @@ INSERT INTO frecuencias (cooperativa_id, resolucion_ant, origen, destino, hora_s
 (1, 'ANT-RES-2024-003', 'Ambato', 'Guayaquil', '10:00:00', 9.00, 'DIRECTO'),
 (2, 'ANT-RES-2024-104', 'Pelileo', 'Ambato', '06:15:00', 1.25, 'PARADAS');
 
--- 4. Buses (1 bus de 40 asientos con baño posterior y 1 bus de 41 asientos)
+-- 4. Buses (1 bus de 40 asientos con baño posterior, 1 bus de 41 asientos y 1 bus de Pelileo)
 INSERT INTO buses (cooperativa_id, numero_disco, placa, capacidad, tiene_bano_posterior, estado) VALUES
 (1, 15, 'TAA-1515', 40, TRUE, 'OPERATIVO'),
 (1, 18, 'TAA-1818', 41, FALSE, 'OPERATIVO'),
@@ -58,8 +58,27 @@ BEGIN
     END LOOP;
 END $$;
 
--- 7. Hoja de Ruta / Viajes Programados para la fecha actual
+-- 7. Generar Asientos para Bus 3 (40 asientos: Cooperativa Flota Pelileo Express)
+DO $$
+DECLARE
+    i INT;
+    cat VARCHAR(10);
+BEGIN
+    FOR i IN 1..40 LOOP
+        IF i <= 4 THEN
+            cat := 'VIP';
+        ELSE
+            cat := 'NORMAL';
+        END IF;
+        INSERT INTO asientos (bus_id, numero_asiento, fila, columna, categoria)
+        VALUES (3, i, ((i - 1) / 4) + 1, ((i - 1) % 4) + 1, cat)
+        ON CONFLICT (bus_id, numero_asiento) DO NOTHING;
+    END LOOP;
+END $$;
+
+-- 8. Hoja de Ruta / Viajes Programados para la fecha actual (fechas relativas dinámicas)
 INSERT INTO programacion_viajes (frecuencia_id, bus_id, fecha_viaje, hora_salida_programada, estado) VALUES
 (1, 1, CURRENT_DATE, '07:00:00', 'PROGRAMADO'),
 (2, 2, CURRENT_DATE, '08:30:00', 'PROGRAMADO'),
-(3, 1, CURRENT_DATE, '10:00:00', 'PROGRAMADO');
+(3, 1, CURRENT_DATE, '10:00:00', 'PROGRAMADO'),
+(4, 3, CURRENT_DATE, '06:15:00', 'PROGRAMADO');

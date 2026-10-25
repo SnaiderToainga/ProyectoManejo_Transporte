@@ -1,5 +1,7 @@
 // backend/src/controllers/officeController.js
-const pool = require('../config/db');
+const { enviarBoletoEmail } = require('../services/emailService');
+const db = require('../config/db');
+const pool = db.pool || db;
 const crypto = require('crypto');
 
 // 1. Obtener reservas con comprobante en estado PENDIENTE
@@ -8,8 +10,10 @@ exports.getReservasPendientes = async (req, res) => {
     const query = `
       SELECT 
         r.id,
+        r.id AS reserva_id,
         r.codigo_reserva,
         r.total,
+        r.total AS total_pagado,
         r.estado,
         r.comprobante_url,
         r.expira_en,
@@ -21,6 +25,14 @@ exports.getReservasPendientes = async (req, res) => {
         c.nombre AS cooperativa_nombre,
         b.numero_disco,
         b.placa,
+        COALESCE(
+          (SELECT nombre_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
+          'Cliente Pasajero'
+        ) AS cliente_nombre,
+        COALESCE(
+          (SELECT cedula_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
+          '1801234567'
+        ) AS cliente_cedula,
         COALESCE(
           json_agg(
             json_build_object(
@@ -52,10 +64,12 @@ exports.getReservasPendientes = async (req, res) => {
   }
 };
 
-// 2. Aprobar o Rechazar comprobante (HU05)
+// 2. Aprobar o Rechazar comprobante (HU05) + Despacho de Correo con QR
 exports.validarComprobante = async (req, res) => {
   const { id } = req.params;
-  const { accion, estado } = req.body; // Soporta { accion: 'APROBAR' | 'RECHAZAR' } o { estado: 'PAGADO' | 'RECHAZADO' }
+  const body = req.body || {};
+  const accion = body.accion || (req.path && req.path.includes('aprobar') ? 'APROBAR' : req.path && req.path.includes('rechazar') ? 'RECHAZAR' : '');
+  const estado = body.estado;
 
   const aprobar =
     accion === 'APROBAR' ||
@@ -97,6 +111,73 @@ exports.validarComprobante = async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    // Despacho asíncrono de correo electrónico si la reserva fue aprobada
+    if (aprobar) {
+      (async () => {
+        try {
+          const viajeQuery = await pool.query(
+            `SELECT 
+              r.id AS reserva_id,
+              r.codigo_reserva,
+              r.total,
+              u.correo AS email,
+              c.nombre AS cooperativa_nombre,
+              f.origen,
+              f.destino,
+              pv.fecha_viaje,
+              pv.hora_salida_programada,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'numero_asiento', a.numero_asiento,
+                    'nombre_pasajero', db.nombre_pasajero,
+                    'cedula_pasajero', db.cedula_pasajero,
+                    'codigo_qr', db.codigo_qr
+                  )
+                ) FILTER (WHERE db.id IS NOT NULL), '[]'
+              ) AS boletos
+            FROM reservas r
+            LEFT JOIN usuarios u ON r.usuario_id = u.id
+            JOIN programacion_viajes pv ON r.programacion_id = pv.id
+            JOIN frecuencias f ON pv.frecuencia_id = f.id
+            JOIN cooperativas c ON f.cooperativa_id = c.id
+            LEFT JOIN detalle_boletos db ON db.reserva_id = r.id
+            LEFT JOIN asientos a ON db.asiento_id = a.id
+            WHERE r.id = $1
+            GROUP BY r.id, r.codigo_reserva, r.total, u.correo, c.nombre, f.origen, f.destino, pv.fecha_viaje, pv.hora_salida_programada`,
+            [id]
+          );
+
+          if (viajeQuery.rows.length > 0) {
+            const v = viajeQuery.rows[0];
+            const emailDestino = v.email || 'pasajero@correo.com';
+            const asientosArray = Array.isArray(v.boletos) && v.boletos.length > 0 
+              ? v.boletos.map(b => `Asiento ${b.numero_asiento}`) 
+              : ['Asiento asignado'];
+
+            const fechaTexto = v.fecha_viaje 
+              ? new Date(v.fecha_viaje).toISOString().split('T')[0] 
+              : 'Fecha confirmada';
+
+            await enviarBoletoEmail({
+              emailDestinatario: emailDestino,
+              cooperativa: v.cooperativa_nombre,
+              origen: v.origen,
+              destino: v.destino,
+              fecha: fechaTexto,
+              hora: v.hora_salida_programada,
+              asientos: asientosArray,
+              total: v.total,
+              reservaId: v.codigo_reserva
+            });
+          }
+        } catch (errEmail) {
+          console.error('Error enviando correo de boleto tras aprobación:', errEmail);
+        }
+      })();
+    }
+
     res.json({
       mensaje: aprobar ? 'Comprobante aprobado y boletos emitidos' : 'Reserva rechazada y asientos liberados',
       reserva
@@ -112,8 +193,9 @@ exports.validarComprobante = async (req, res) => {
 
 // 3. Venta directa en ventanilla / taquilla (Efectivo, Transferencia, Depósito + Descuentos)
 exports.crearVentaVentanilla = async (req, res) => {
-  const { programacion_id, viaje_id, pasajeros } = req.body;
+  const { programacion_id, viaje_id, pasajeros, email, correo } = req.body;
   const progId = programacion_id || viaje_id;
+  const emailContacto = email || correo;
 
   if (!progId || !Array.isArray(pasajeros) || pasajeros.length === 0) {
     return res.status(400).json({ error: 'Datos de viaje y pasajeros son obligatorios' });
@@ -123,14 +205,33 @@ exports.crearVentaVentanilla = async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Asociar usuario si se proporciona correo
+    let usuarioId = null;
+    if (emailContacto) {
+      const emailLimpio = emailContacto.trim().toLowerCase();
+      const userCheck = await client.query('SELECT id FROM usuarios WHERE correo = $1', [emailLimpio]);
+      if (userCheck.rows.length > 0) {
+        usuarioId = userCheck.rows[0].id;
+      } else {
+        const nombrePasajero = pasajeros[0].nombre_pasajero || pasajeros[0].nombre || 'Cliente Pasajero';
+        const newUser = await client.query(
+          `INSERT INTO usuarios (nombre, correo, rol, password_hash)
+           VALUES ($1, $2, 'CLIENTE', 'invitado_sin_password')
+           RETURNING id`,
+          [nombrePasajero, emailLimpio]
+        );
+        usuarioId = newUser.rows[0].id;
+      }
+    }
+
     const codigoReserva = 'TAQ-' + crypto.randomBytes(3).toString('hex').toUpperCase();
     const total = pasajeros.reduce((acc, p) => acc + Number(p.precio || 0), 0);
 
     const insertReserva = await client.query(
-      `INSERT INTO reservas (programacion_id, codigo_reserva, total, estado, comprobante_url)
-       VALUES ($1, $2, $3, 'PAGADO', 'VENTA_VENTANILLA_EFECTIVO')
+      `INSERT INTO reservas (programacion_id, usuario_id, codigo_reserva, total, estado, comprobante_url)
+       VALUES ($1, $2, $3, $4, 'PAGADO', 'VENTA_VENTANILLA_EFECTIVO')
        RETURNING *`,
-      [progId, codigoReserva, total]
+      [progId, usuarioId, codigoReserva, total]
     );
 
     const reserva = insertReserva.rows[0];
@@ -152,6 +253,39 @@ exports.crearVentaVentanilla = async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    // Despacho de correo si se ingresó email en taquilla
+    if (emailContacto) {
+      (async () => {
+        try {
+          const tripRes = await pool.query(
+            `SELECT c.nombre AS cooperativa, f.origen, f.destino, pv.fecha_viaje, pv.hora_salida_programada
+             FROM programacion_viajes pv
+             JOIN frecuencias f ON pv.frecuencia_id = f.id
+             JOIN cooperativas c ON f.cooperativa_id = c.id
+             WHERE pv.id = $1`,
+            [progId]
+          );
+          if (tripRes.rows.length > 0) {
+            const tr = tripRes.rows[0];
+            await enviarBoletoEmail({
+              emailDestinatario: emailContacto,
+              cooperativa: tr.cooperativa,
+              origen: tr.origen,
+              destino: tr.destino,
+              fecha: new Date(tr.fecha_viaje).toISOString().split('T')[0],
+              hora: tr.hora_salida_programada,
+              asientos: pasajeros.map((_, i) => `Asiento ${i + 1}`),
+              total,
+              reservaId: codigoReserva
+            });
+          }
+        } catch (errEmail) {
+          console.error('Error al despachar correo de taquilla:', errEmail);
+        }
+      })();
+    }
+
     res.status(201).json({
       mensaje: 'Venta en ventanilla registrada con éxito',
       codigo_reserva: codigoReserva,
