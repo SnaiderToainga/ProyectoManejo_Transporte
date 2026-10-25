@@ -1,5 +1,9 @@
 export function secondsRemaining(expiresAt, now = Date.now()) {
-  const timestamp = Date.parse(expiresAt);
+  if (!expiresAt) return 0;
+  let cleanStr = String(expiresAt).trim();
+  if (cleanStr.includes(' ') && !cleanStr.includes('T')) cleanStr = cleanStr.replace(' ', 'T');
+  if (!cleanStr.endsWith('Z') && !cleanStr.includes('+')) cleanStr += 'Z';
+  const timestamp = Date.parse(cleanStr);
   return Number.isFinite(timestamp) ? Math.max(0, Math.ceil((timestamp - now) / 1000)) : 0;
 }
 export function formatCountdown(seconds) {
