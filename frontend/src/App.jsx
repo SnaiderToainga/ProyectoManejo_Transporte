@@ -119,9 +119,11 @@ export default function App() {
             <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
               Mi boleto
             </button>
-            <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
-              Taquilla / Oficina
-            </button>
+            {usuario && (usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
+              <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
+                Taquilla / Oficina
+              </button>
+            )}
            <button
             className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
             onClick={() => {
