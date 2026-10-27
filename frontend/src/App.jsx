@@ -16,18 +16,32 @@ export default function App() {
   const [seats, setSeats] = useState([]);
   const [code, setCode] = useState('');
 
-  // Detección inicial de página por URL o hash
+  // Detección inicial de página por URL o hash con guardián de ruta
   const getInitialPage = () => {
     const path = window.location.pathname;
     const hash = window.location.hash;
+    let auth = null;
+    try {
+      auth = JSON.parse(localStorage.getItem('transporte_auth'));
+    } catch {}
+
     if (path === '/admin' || hash === '#admin') return 'admin';
     if (path === '/login' || hash === '#login') return 'login';
-    if (path === '/oficina' || hash === '#oficina') return 'oficina';
+    if (path === '/oficina' || hash === '#oficina') {
+      if (!auth || (auth.rol !== 'OFICINISTA' && auth.rol !== 'SUPERADMIN')) {
+        window.location.hash = 'login';
+        return 'login';
+      }
+      return 'oficina';
+    }
     if (hash === '#boleto') return 'ticket';
     return 'search';
   };
 
-  const [page, setPage] = useState(getInitialPage);
+  const isAuthorizedForOffice = (user) => {
+    return Boolean(user && (user.rol === 'OFICINISTA' || user.rol === 'SUPERADMIN'));
+  };
+
   const [usuario, setUsuario] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('transporte_auth'));
@@ -35,6 +49,8 @@ export default function App() {
       return null;
     }
   });
+  const [authError, setAuthError] = useState('');
+  const [page, setPage] = useState(getInitialPage);
 
   const goSearch = () => {
     setTrip(null);
@@ -52,7 +68,8 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
-  const goLogin = () => {
+  const goLogin = (msg = '') => {
+    setAuthError(msg);
     setPage('login');
     window.location.hash = 'login';
     window.scrollTo(0, 0);
@@ -65,6 +82,11 @@ export default function App() {
   };
 
   const goOficina = () => {
+    if (!isAuthorizedForOffice(usuario)) {
+      goLogin('Acceso restringido a personal de taquilla autorizado');
+      return;
+    }
+    setAuthError('');
     setPage('oficina');
     window.location.hash = 'oficina';
     window.scrollTo(0, 0);
@@ -78,6 +100,20 @@ export default function App() {
       } else if (hash === '#login') {
         setPage('login');
       } else if (hash === '#oficina') {
+        const storedUser = (() => {
+          try {
+            return JSON.parse(localStorage.getItem('transporte_auth'));
+          } catch {
+            return null;
+          }
+        })();
+        if (!isAuthorizedForOffice(storedUser)) {
+          setAuthError('Acceso restringido a personal de taquilla autorizado');
+          setPage('login');
+          window.location.hash = 'login';
+          return;
+        }
+        setAuthError('');
         setPage('oficina');
       } else if (hash === '#boleto') {
         setPage('ticket');
@@ -162,17 +198,32 @@ export default function App() {
           />
         ) : page === 'login' ? (
           <Login
+            alertaSeguridad={authError}
             onLoginSuccess={(user, ruta) => {
               setUsuario(user);
+              setAuthError('');
               if (ruta === '/oficina' || user?.rol === 'OFICINISTA') {
-                goOficina();
+                setPage('oficina');
+                window.location.hash = 'oficina';
               } else {
                 goAdmin();
               }
             }}
           />
         ) : page === 'oficina' ? (
-          <OfficeDashboard />
+          isAuthorizedForOffice(usuario) ? (
+            <OfficeDashboard />
+          ) : (
+            <Login
+              alertaSeguridad="Acceso restringido a personal de taquilla autorizado"
+              onLoginSuccess={(user) => {
+                setUsuario(user);
+                setAuthError('');
+                setPage('oficina');
+                window.location.hash = 'oficina';
+              }}
+            />
+          )
         ) : page === 'ticket' ? (
           <TicketLookup key={code} initialCode={code} onBack={goSearch} />
         ) : trip && seats.length ? (
