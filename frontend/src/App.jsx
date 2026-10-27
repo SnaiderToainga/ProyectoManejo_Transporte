@@ -9,6 +9,7 @@ import GestionCooperativas from './pages/Admin/GestionCooperativas.jsx';
 import OfficeDashboard from './pages/Office/OfficeDashboard';
 import { recalledCode } from './lib/reservation.js';
 import { isDemo } from './lib/api.js';
+import { canAccessOffice } from './lib/authGuard.js';
 
 export default function App() {
   const [trip, setTrip] = useState(null);
@@ -28,7 +29,7 @@ export default function App() {
     if (path === '/admin' || hash === '#admin') return 'admin';
     if (path === '/login' || hash === '#login') return 'login';
     if (path === '/oficina' || hash === '#oficina') {
-      if (!auth || (auth.rol !== 'OFICINISTA' && auth.rol !== 'SUPERADMIN')) {
+      if (!canAccessOffice(auth)) {
         window.location.hash = 'login';
         return 'login';
       }
@@ -38,9 +39,7 @@ export default function App() {
     return 'search';
   };
 
-  const isAuthorizedForOffice = (user) => {
-    return Boolean(user && (user.rol === 'OFICINISTA' || user.rol === 'SUPERADMIN'));
-  };
+
 
   const [usuario, setUsuario] = useState(() => {
     try {
@@ -82,7 +81,7 @@ export default function App() {
   };
 
   const goOficina = () => {
-    if (!isAuthorizedForOffice(usuario)) {
+    if (!canAccessOffice(usuario)) {
       goLogin('Acceso restringido a personal de taquilla autorizado');
       return;
     }
@@ -107,7 +106,7 @@ export default function App() {
             return null;
           }
         })();
-        if (!isAuthorizedForOffice(storedUser)) {
+        if (!canAccessOffice(storedUser)) {
           setAuthError('Acceso restringido a personal de taquilla autorizado');
           setPage('login');
           window.location.hash = 'login';
@@ -211,7 +210,7 @@ export default function App() {
             }}
           />
         ) : page === 'oficina' ? (
-          isAuthorizedForOffice(usuario) ? (
+          canAccessOffice(usuario) ? (
             <OfficeDashboard />
           ) : (
             <Login
