@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BusFront, Lock, Mail, ShieldAlert, ArrowRight, UserCheck } from 'lucide-react';
 
-export default function Login({ onLoginSuccess }) {
+export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
@@ -97,6 +97,15 @@ export default function Login({ onLoginSuccess }) {
           <h2 style={styles.title}>Portal Administrativo</h2>
           <p style={styles.subtitle}>Sistema de Transporte Interprovincial UTA</p>
         </div>
+
+        {alertaSeguridad && !error && (
+          <div style={styles.alertWarning}>
+            <ShieldAlert size={18} color="#B45309" />
+            <span style={{ fontSize: '0.875rem', color: '#92400E', fontWeight: '600' }}>
+              {alertaSeguridad}
+            </span>
+          </div>
+        )}
 
         {error && (
           <div style={styles.alertError}>
@@ -233,6 +242,16 @@ const styles = {
     fontSize: '0.875rem',
     color: '#64748B',
     margin: 0
+  },
+  alertWarning: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.625rem',
+    padding: '0.75rem 1rem',
+    backgroundColor: '#FEF3C7',
+    border: '1px solid #FCD34D',
+    borderRadius: '8px',
+    marginBottom: '1.25rem'
   },
   alertError: {
     display: 'flex',
