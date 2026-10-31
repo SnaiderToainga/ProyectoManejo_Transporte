@@ -8,10 +8,16 @@ export function passengerError(passengers) {
   return '';
 }
 export function receiptError(file) {
-  if (!file) return 'Selecciona tu comprobante de pago.';
-  if (file.size <= 0) return 'El archivo está vacío.';
-  if (file.size > 5 * 1024 * 1024) return 'El comprobante no puede superar los 5 MB.';
-  const allowed = { 'image/png': /\.png$/i, 'image/jpeg': /\.jpe?g$/i, 'application/pdf': /\.pdf$/i };
-  if (!allowed[file.type]?.test(file.name)) return 'Adjunta un archivo PNG, JPG o PDF válido.';
+  if (!file) { return 'Selecciona tu comprobante de pago.';}
+  if (file.size <= 0) { return 'El archivo está vacío.'; }
+  if (file.size > 5 * 1024 * 1024) { return 'El comprobante no puede superar los 5 MB.'; }
+    const allowed = {
+    'image/png': /\.png$/i,
+    'image/jpeg': /\.jpe?g$/i,
+    'image/jpg': /\.jpe?g$/i,
+    'application/pdf': /\.pdf$/i
+  };
+  if (!allowed[file.type]?.test(file.name)) { return 'Adjunta un archivo PNG, JPG o PDF válido.'; }
   return '';
+
 }

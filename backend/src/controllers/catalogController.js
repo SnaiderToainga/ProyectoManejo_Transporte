@@ -32,7 +32,7 @@ exports.getViajesProgramados = async (req, res) => {
   try {
     const query = `
       SELECT pv.id as programacion_id, pv.fecha_viaje, pv.hora_salida_programada, pv.estado,
-             f.origen, f.destino, f.precio_base, f.resolucion_ant,
+             f.origen, f.destino, f.precio_base, f.resolucion_ant, f.tipo_servicio,
              b.numero_disco, b.placa, b.capacidad, b.tiene_bano_posterior,
              c.nombre as cooperativa_nombre
       FROM programacion_viajes pv
@@ -54,15 +54,25 @@ exports.getAsientosPorViaje = async (req, res) => {
   const { programacionId } = req.params;
   try {
     const query = `
-      SELECT a.id as asiento_id, a.numero_asiento, a.fila, a.columna, a.categoria,
-             CASE 
-               WHEN db.id IS NOT NULL AND r.estado IN ('PAGADO', 'PENDIENTE') THEN 'OCUPADO'
-               ELSE 'DISPONIBLE'
-             END as estado_ocupacion
+      SELECT a.id as asiento_id,
+            a.numero_asiento,
+            a.fila,
+            a.columna,
+            a.categoria,
+            CASE
+              WHEN EXISTS (
+                SELECT 1
+                FROM detalle_boletos db
+                JOIN reservas r ON r.id = db.reserva_id
+                WHERE db.asiento_id = a.id
+                  AND r.programacion_id = pv.id
+                  AND r.estado IN ('PAGADO', 'PENDIENTE')
+              )
+              THEN 'OCUPADO'
+              ELSE 'DISPONIBLE'
+            END as estado_ocupacion
       FROM programacion_viajes pv
       JOIN asientos a ON a.bus_id = pv.bus_id
-      LEFT JOIN detalle_boletos db ON db.asiento_id = a.id
-      LEFT JOIN reservas r ON r.id = db.reserva_id AND r.programacion_id = pv.id
       WHERE pv.id = $1
       ORDER BY a.numero_asiento ASC
     `;
