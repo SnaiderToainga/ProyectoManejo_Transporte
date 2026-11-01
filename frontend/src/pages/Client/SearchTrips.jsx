@@ -71,7 +71,7 @@ export default function SearchTrips({ onChoose }) {
             : <div className="trip-list">{trips.map(trip => <article className="trip-card" key={trip.programacion_id}>
               <div className="operator"><span className="operator-icon"><BusFront size={23} /></span><div><h3>{trip.cooperativa_nombre}</h3><span className="muted">Unidad {trip.numero_disco} · {trip.capacidad} asientos</span></div></div>
               <div className="trip-route"><strong>{shortTime(trip.hora_salida_programada)}</strong><span>{trip.origen}</span><ArrowRight size={22} className="route-arrow" /><span>{trip.destino}</span></div>
-              <div className="trip-tags"><span>{trip.tiene_bano_posterior ? 'Baño a bordo' : 'Fila posterior continua'}</span><span>Normal / VIP</span></div>
+              <div className="trip-tags"><span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span><span> Servicio: {trip.tipo_servicio || 'No registrado'}</span><span>{trip.capacidad} asientos</span><span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span><span>Normal / VIP</span></div>
               <div className="trip-price"><span className="muted">Tarifa base</span><strong>{money(trip.precio_base)}</strong><button className="button primary" onClick={() => onChoose(trip, query.categoria)}>Elegir asientos <ArrowRight size={16} /></button></div>
             </article>)}</div>}
     </section>

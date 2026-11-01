@@ -22,6 +22,23 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', officeRoutes);
 app.use('/api/oficina', officeRoutes);
 
+// Manejo de errores
+app.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      error: 'El comprobante no puede superar los 5 MB.'
+    });
+  }
+
+  if (err.code === 'INVALID_RECEIPT_TYPE') {
+    return res.status(400).json({
+      error: err.message
+    });
+  }
+
+  next(err);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
