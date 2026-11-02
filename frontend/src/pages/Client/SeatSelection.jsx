@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3, MapPin, RefreshCw } from 'lucide-react';
-import BusSeatGrid from '../../components/BusSeatGrid.jsx';
+import BusSeatGrid, { SeatLegend } from '../../components/BusSeatGrid.jsx';
 import { api } from '../../lib/api.js';
 import { money, shortTime, travelDate } from '../../lib/format.js';
 import { isAvailable, seatCategory, seatPrice, uniqueSeats } from '../../lib/seats.js';
@@ -36,9 +36,12 @@ export default function SeatSelection({ trip, initialCategory = '', onBack, onCo
     <div className="flow-layout"><div className="panel seat-panel"><div className="seat-toolbar"><label>Tipo de asiento<select aria-label="Tipo de asiento" value={category} onChange={event => { setCategory(event.target.value); setSelected([]); }}><option value="">Todos</option><option value="VIP">VIP</option><option value="NORMAL">Normal</option></select></label><button className="button secondary" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} />{loading ? 'Actualizando…' : 'Actualizar'}</button></div>
       {error && <p className="inline-error" role="alert">{error}</p>}
       {seats.length ? (
-        <div className="seat-map-scroll overflow-x-auto" role="region" aria-label="Mapa de asientos" tabIndex={0}>
-          <BusSeatGrid capacity={trip.capacidad} seats={seats} selected={selected} category={category} onToggle={toggle} disabled={loading || Boolean(error)} />
-        </div>
+        <>
+          <SeatLegend />
+          <div className="seat-map-scroll overflow-x-auto" role="region" aria-label="Mapa de asientos" tabIndex={0}>
+            <BusSeatGrid capacity={trip.capacidad} seats={seats} selected={selected} category={category} onToggle={toggle} disabled={loading || Boolean(error)} showLegend={false} />
+          </div>
+        </>
       ) : <p role="status">{loading ? 'Consultando los asientos…' : 'No hay un mapa de asientos disponible para este viaje.'}</p>}
     </div><aside className="panel summary"><p className="eyebrow">TU VIAJE</p><h2>{trip.origen}<span className="summary-arrow">↓</span>{trip.destino}</h2><p><CalendarDays size={16} />{travelDate(trip.fecha_viaje)}</p><p><Clock3 size={16} />Salida {shortTime(trip.hora_salida_programada)}</p><p><MapPin size={16} />{trip.cooperativa_nombre}</p><hr /><h3>Asientos seleccionados</h3>
       {!picked.length ? <p className="muted">Toca un asiento disponible para empezar.</p> : <ul className="selected-seats">{picked.map(seat => <li key={seat.asiento_id}><span>{seat.numero_asiento} · {seatCategory(seat)}</span><strong>{money(seatPrice(seat, trip))}</strong></li>)}</ul>}

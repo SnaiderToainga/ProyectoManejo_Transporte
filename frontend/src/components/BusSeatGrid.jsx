@@ -1,11 +1,15 @@
 import { Armchair, CircleSlash, CircleGauge, Bath } from 'lucide-react';
 import { isAvailable, seatCategory, seatPosition, uniqueSeats } from '../lib/seats.js';
 
-export default function BusSeatGrid({ capacity, seats, selected = [], onToggle, category = '', disabled = false }) {
+export function SeatLegend() {
+  return <div className="seat-legend" aria-label="Leyenda de asientos"><span><i className="legend-free" />Disponible</span><span><i className="legend-vip" />VIP</span><span><i className="legend-selected" />Tu selección</span><span><i className="legend-occupied" />Ocupado</span></div>;
+}
+
+export default function BusSeatGrid({ capacity, seats, selected = [], onToggle, category = '', disabled = false, showLegend = true }) {
   const byNumber = new Map(uniqueSeats(seats).map(seat => [seat.numero_asiento, seat]));
   if (![40, 41].includes(Number(capacity))) return <p role="alert">La capacidad de este bus no es compatible. Elige otro viaje.</p>;
   return <div>
-    <div className="seat-legend" aria-label="Leyenda de asientos"><span><i className="legend-free" />Disponible</span><span><i className="legend-vip" />VIP</span><span><i className="legend-selected" />Tu selección</span><span><i className="legend-occupied" />Ocupado</span></div>
+    {showLegend && <SeatLegend />}
     <div className="bus-outline"><div className="bus-front"><CircleGauge size={24} /><span>FRENTE DEL BUS</span></div>
       <div className="seat-grid" role="group" aria-label={`Bus de ${capacity} asientos`}>
         {Array.from({ length: Number(capacity) }, (_, i) => {

@@ -19,7 +19,7 @@ a { color: inherit; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-size: 28px; font-weight: 800; letter-spacing: -1.2px; line-height: 1; }
 .brand-symbol { padding: 11px; border-radius: 14px; background: #183f3d; color: #fff; }
 .brand-sub { display: block; margin-top: 6px; font-size: 9px; letter-spacing: 2px; font-weight: 600; }
-.site-nav { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; min-width: 0; }
+.site-nav { display: flex; gap: 8px 26px; align-items: center; min-width: 0; }
 .nav-toggle { display: none; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 12px; border: 1px solid #cad7cd; border-radius: 8px; background: #fff; color: #214e44; font-size: 14px; font-weight: 650; }
 .nav-link { background: none; border: 0; padding: 14px 0; color: #677b76; font-size: 14px; font-weight: 600; border-bottom: 2px solid transparent; }
 .nav-link.active { color: #153d3b; border-bottom-color: #c66a39; }
@@ -174,3 +174,19 @@ hr { border: 0; border-top: 1px solid #e0e6db; margin: 22px 0; }
 @media (max-width: 760px) { .flow-layout { grid-template-columns: 1fr; } .summary { position: static; } .seat-panel { padding: 18px; } }
 @media (max-width: 1000px) { .header-note { display: none; } .header-inner { justify-content: space-between; } .search-main { grid-template-columns: 1fr 1fr; } .trip-card { grid-template-columns: 1fr 1fr; } .trip-price { grid-column: 2; } .trip-route { grid-column: 1; margin-top: 16px; } .trip-tags { grid-column: 1; } .journey-art { transform: scale(.9); } }
 @media (max-width: 640px) { .shell { width: calc(100% - 32px); } .header-inner { min-height: 78px; gap: 15px; } .brand { font-size: 24px; } .brand-symbol { padding: 8px; } nav { gap: 14px; } .nav-link { font-size: 12px; } .hero { grid-template-columns: 1fr; padding: 32px 0; min-height: auto; } .hero h1 { font-size: 44px; } .journey-art { display: none; } .search-main { padding: 18px; gap: 16px; } .search-main label:nth-child(3), .search-button { grid-column: 1 / -1; } .search-filters { padding: 15px 18px; gap: 10px; } .filter-heading { width: 100%; } .search-filters > label:not(.time-filter) { flex: 1; min-width: 120px; } .section-heading { flex-direction: column; align-items: start; } .trip-card { padding: 18px; column-gap: 12px; } .trip-price { padding-left: 14px; } .trip-price .button { padding: 10px; font-size: 11px; } .trip-price .button svg { display: none; } .operator { gap: 8px; } .operator-icon { display: none; } .trip-route { grid-template-columns: 1fr; gap: 4px; } .route-arrow { display: none; } .trip-route span:last-child::before { content: '→ '; } .trip-tags { flex-wrap: wrap; } .how-it-works { grid-template-columns: 1fr; gap: 20px; } .site-footer { flex-direction: column; justify-content: center; gap: 8px; } }
+@media (max-width: 639px) {
+  .site-header .brand { flex-shrink: 0; gap: 8px; font-size: 22px; }
+  .site-nav .nav-link { font-size: 14px; line-height: 1.4; }
+  .hero h1 { font-size: clamp(2.2rem, 8vw, 2.75rem); }
+  .eyebrow { line-height: 1.5; letter-spacing: 1.4px; }
+  .flow-title { font-size: clamp(1.75rem, 6vw, 2.25rem); }
+  .flow-layout { gap: 18px; }
+  .seat-toolbar { flex-wrap: wrap; align-items: stretch; gap: 12px; }
+  .seat-toolbar label { flex: 1 1 130px; }
+  .seat-toolbar .button { flex: 1 1 120px; }
+  .seat-legend { gap: 10px; font-size: 11px; line-height: 1.4; }
+  .search-main input, .search-filters select, .seat-toolbar select, .passenger-fields input { font-size: 16px; }
+}
+@media (max-width: 380px) {
+  .search-main { grid-template-columns: 1fr; }
+}

@@ -175,7 +175,7 @@ export default function App() {
             Menú
           </button>
 
-          <nav id="main-navigation" className={`site-nav ${menuOpen ? 'is-open' : ''}`} aria-label="Principal" onClick={() => setMenuOpen(false)}>
+          <nav id="main-navigation" className={`site-nav flex-wrap ${menuOpen ? 'is-open' : ''}`} aria-label="Principal" onClick={() => setMenuOpen(false)}>
             <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
               Buscar viaje
             </button>
