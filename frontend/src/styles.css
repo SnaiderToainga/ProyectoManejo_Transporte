@@ -19,7 +19,8 @@ a { color: inherit; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-size: 28px; font-weight: 800; letter-spacing: -1.2px; line-height: 1; }
 .brand-symbol { padding: 11px; border-radius: 14px; background: #183f3d; color: #fff; }
 .brand-sub { display: block; margin-top: 6px; font-size: 9px; letter-spacing: 2px; font-weight: 600; }
-nav { display: flex; gap: 26px; align-items: center; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; min-width: 0; }
+.nav-toggle { display: none; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 12px; border: 1px solid #cad7cd; border-radius: 8px; background: #fff; color: #214e44; font-size: 14px; font-weight: 650; }
 .nav-link { background: none; border: 0; padding: 14px 0; color: #677b76; font-size: 14px; font-weight: 600; border-bottom: 2px solid transparent; }
 .nav-link.active { color: #153d3b; border-bottom-color: #c66a39; }
 .header-note { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: #607570; }
@@ -158,6 +159,13 @@ hr { border: 0; border-top: 1px solid #e0e6db; margin: 22px 0; }
 .payment-lookup { max-width: 600px; margin-inline: auto; }
 .inline-link { border: 0; background: none; color: #315d46; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; padding: 3px; }
 .resume-banner { font-size: 12px; padding: 15px 0 0; color: #647a5e; }
+@media (max-width: 639px) {
+  .site-header .header-inner { flex-wrap: wrap; gap: 0 12px; padding-block: 12px; }
+  .nav-toggle { display: inline-flex; margin-left: auto; }
+  .site-nav { display: none; flex-basis: 100%; flex-direction: column; align-items: stretch; gap: 4px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #dfe5de; }
+  .site-nav.is-open { display: flex; }
+  .site-nav .nav-link { min-height: 44px; padding: 12px; text-align: left; }
+}
 @media (max-width: 640px) { .lookup-form { flex-direction: column; align-items: stretch; } .lookup-heading { align-items: start; } .lookup-heading h2 { font-size: 19px; } .ticket-heading { flex-wrap: wrap; padding: 16px; } .ticket-heading strong { margin: 0; } .ticket-body { grid-template-columns: 1fr; padding: 20px; } .ticket-qr { border: 0; border-top: 1px dashed #d5dfcd; padding: 20px 0 0; } .ticket-bottom { flex-direction: column; } .header-inner { gap: 8px; } .brand { font-size: 21px; gap: 7px; } .brand-sub { font-size: 8px; letter-spacing: 1.5px; } }
 @media (max-width: 640px) { .passenger-fields { grid-template-columns: 1fr; } .passenger-fields legend { flex-wrap: wrap; } }
 @media (max-width: 760px) { .flow-layout { grid-template-columns: 1fr; } .summary { position: static; } .seat-panel { padding: 18px; } }

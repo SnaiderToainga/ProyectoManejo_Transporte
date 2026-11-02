@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { BusFront, Ticket, Shield } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { BusFront, Ticket, Shield, Menu, X } from 'lucide-react';
 import SearchTrips from './pages/Client/SearchTrips.jsx';
 import SeatSelection from './pages/Client/SeatSelection.jsx';
 import Checkout from './pages/Client/Checkout.jsx';
@@ -16,6 +16,15 @@ export default function App() {
   const [category, setCategory] = useState('');
   const [seats, setSeats] = useState([]);
   const [code, setCode] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef(null);
+
+  useEffect(() => {
+    const mobile = window.matchMedia('(max-width: 639px)');
+    const closeOnDesktop = () => { if (!mobile.matches) setMenuOpen(false); };
+    mobile.addEventListener('change', closeOnDesktop);
+    return () => mobile.removeEventListener('change', closeOnDesktop);
+  }, []);
 
   // Detección inicial de página por URL o hash con guardián de ruta
   const getInitialPage = () => {
@@ -52,6 +61,7 @@ export default function App() {
   const [page, setPage] = useState(getInitialPage);
 
   const goSearch = () => {
+    setMenuOpen(false);
     setTrip(null);
     setSeats([]);
     setCode('');
@@ -93,6 +103,7 @@ export default function App() {
 
   useEffect(() => {
     const change = () => {
+      setMenuOpen(false);
       const hash = window.location.hash;
       if (hash === '#admin') {
         setPage('admin');
@@ -136,7 +147,12 @@ export default function App() {
         </div>
       )}
 
-      <header className="site-header">
+      <header className="site-header" onKeyDown={event => {
+        if (event.key === 'Escape' && menuOpen) {
+          setMenuOpen(false);
+          menuButton.current?.focus();
+        }
+      }}>
         <div className="shell header-inner">
           <button onClick={goSearch} className="brand" aria-label="En ruta, inicio">
             <span className="brand-symbol">
@@ -147,7 +163,19 @@ export default function App() {
             </span>
           </button>
 
-          <nav aria-label="Principal">
+          <button
+            ref={menuButton}
+            type="button"
+            className="nav-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="main-navigation"
+            onClick={() => setMenuOpen(open => !open)}
+          >
+            {menuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
+            Menú
+          </button>
+
+          <nav id="main-navigation" className={`site-nav ${menuOpen ? 'is-open' : ''}`} aria-label="Principal" onClick={() => setMenuOpen(false)}>
             <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
               Buscar viaje
             </button>
