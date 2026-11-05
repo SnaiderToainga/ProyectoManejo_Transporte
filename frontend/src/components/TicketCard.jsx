@@ -9,10 +9,9 @@ export default function TicketCard({ reservation, ticket }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(JSON.stringify({
-      reserva: reservation.codigo_reserva, boleto_id: ticket.id,
-      asiento: ticket.numero_asiento, cedula: ticket.cedula_pasajero,
-    }), { width: 200, margin: 2 })).then(data => { if (active) setQr(data); }).catch(() => { if (active) setError('No se pudo mostrar el QR. Descarga el PDF para obtenerlo.'); });
+    const baseUrl = (import.meta.env.VITE_APP_URL || window.location.origin);
+    const qrUrl = `${baseUrl}/validar?reserva=${reservation.codigo_reserva}&asiento=${ticket.numero_asiento}`;
+    import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(qrUrl, { width: 200, margin: 2 })).then(data => { if (active) setQr(data); }).catch(() => { if (active) setError('No se pudo mostrar el QR. Descarga el PDF para obtenerlo.'); });
     return () => { active = false; };
   }, [reservation.codigo_reserva, ticket.id, ticket.numero_asiento, ticket.cedula_pasajero]);
   const download = async () => {

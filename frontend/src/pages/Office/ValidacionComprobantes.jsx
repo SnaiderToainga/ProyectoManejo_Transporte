@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace('/api', '');
 
 const ValidacionComprobantes = () => {
   const [reservas, setReservas] = useState([]);
@@ -97,7 +98,7 @@ const ValidacionComprobantes = () => {
                   <td className="py-2 px-4 border-b text-sm">
                     {reserva.comprobante_url ? (
                       <button 
-                        onClick={() => setModalImage(reserva.comprobante_url)}
+                        onClick={() => setModalImage(`${BACKEND_URL}${reserva.comprobante_url}`)}
                         className="text-blue-600 hover:underline font-medium"
                       >
                         Ver imagen
