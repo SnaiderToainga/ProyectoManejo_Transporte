@@ -123,7 +123,7 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/png,image/jpeg,application/pdf,.png,.jpg,.jpeg,.pdf"
+                accept="image/png,image/jpeg,image/jpg,application/pdf,.png,.jpg,.jpeg,.pdf"
                 disabled={busy}
                 onChange={event => {
                   const next = event.target.files?.[0];

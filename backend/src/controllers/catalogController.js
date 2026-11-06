@@ -27,12 +27,40 @@ exports.getFrecuencias = async (req, res) => {
 };
 
 // Obtener hoja de ruta / viajes programados para una fecha
+// Obtener hoja de ruta / viajes programados para una fecha con auto-programación diaria
 exports.getViajesProgramados = async (req, res) => {
-  const { fecha } = req.query;
+  const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
   try {
+    // 1. Verificar si ya existen viajes programados para la fecha solicitada
+    const checkQuery = await db.query(
+      'SELECT COUNT(*)::int as count FROM programacion_viajes WHERE fecha_viaje = $1',
+      [fecha]
+    );
+
+    // 2. Si no existen, auto-generar la hoja de ruta del día a partir de las frecuencias autorizadas por la ANT
+    if (checkQuery.rows[0].count === 0) {
+      await db.query(`
+        INSERT INTO programacion_viajes (frecuencia_id, bus_id, fecha_viaje, hora_salida_programada, estado)
+        SELECT 
+          f.id,
+          CASE 
+            WHEN f.id = 4 THEN 3 -- Pelileo Express (Bus 3 de 40 asientos)
+            WHEN f.id = 2 THEN 2 -- CITA Carcelén (Bus 2 de 41 asientos)
+            ELSE 1               -- CITA Quitumbe / Guayaquil (Bus 1 de 40 asientos)
+          END as bus_id,
+          $1::date,
+          f.hora_salida,
+          'PROGRAMADO'
+        FROM frecuencias f
+        WHERE f.activo = true
+        ON CONFLICT (bus_id, fecha_viaje, hora_salida_programada) DO NOTHING
+      `, [fecha]);
+    }
+
+    // 3. Consultar y retornar los viajes programados
     const query = `
       SELECT pv.id as programacion_id, pv.fecha_viaje, pv.hora_salida_programada, pv.estado,
-             f.origen, f.destino, f.precio_base, f.resolucion_ant,
+             f.origen, f.destino, f.precio_base, f.resolucion_ant, f.tipo_servicio,
              b.numero_disco, b.placa, b.capacidad, b.tiene_bano_posterior,
              c.nombre as cooperativa_nombre
       FROM programacion_viajes pv
@@ -42,7 +70,7 @@ exports.getViajesProgramados = async (req, res) => {
       WHERE pv.fecha_viaje = $1
       ORDER BY pv.hora_salida_programada ASC
     `;
-    const result = await db.query(query, [fecha || new Date().toISOString().split('T')[0]]);
+    const result = await db.query(query, [fecha]);
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -54,15 +82,25 @@ exports.getAsientosPorViaje = async (req, res) => {
   const { programacionId } = req.params;
   try {
     const query = `
-      SELECT a.id as asiento_id, a.numero_asiento, a.fila, a.columna, a.categoria,
-             CASE 
-               WHEN db.id IS NOT NULL AND r.estado IN ('PAGADO', 'PENDIENTE') THEN 'OCUPADO'
-               ELSE 'DISPONIBLE'
-             END as estado_ocupacion
+      SELECT a.id as asiento_id,
+            a.numero_asiento,
+            a.fila,
+            a.columna,
+            a.categoria,
+            CASE
+              WHEN EXISTS (
+                SELECT 1
+                FROM detalle_boletos db
+                JOIN reservas r ON r.id = db.reserva_id
+                WHERE db.asiento_id = a.id
+                  AND r.programacion_id = pv.id
+                  AND r.estado IN ('PAGADO', 'PENDIENTE')
+              )
+              THEN 'OCUPADO'
+              ELSE 'DISPONIBLE'
+            END as estado_ocupacion
       FROM programacion_viajes pv
       JOIN asientos a ON a.bus_id = pv.bus_id
-      LEFT JOIN detalle_boletos db ON db.asiento_id = a.id
-      LEFT JOIN reservas r ON r.id = db.reserva_id AND r.programacion_id = pv.id
       WHERE pv.id = $1
       ORDER BY a.numero_asiento ASC
     `;
