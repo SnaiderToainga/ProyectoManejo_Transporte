@@ -15,7 +15,16 @@ export default function App() {
   const [trip, setTrip] = useState(null);
   const [category, setCategory] = useState('');
   const [seats, setSeats] = useState([]);
-  const [code, setCode] = useState('');
+  const getUrlCode = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return (params.get('codigo') || params.get('reserva') || '').trim().toUpperCase();
+    } catch {
+      return '';
+    }
+  };
+
+  const [code, setCode] = useState(getUrlCode);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef(null);
 
@@ -44,7 +53,7 @@ export default function App() {
       }
       return 'oficina';
     }
-    if (hash === '#boleto') return 'ticket';
+    if (getUrlCode() || hash === '#boleto') return 'ticket';
     return 'search';
   };
 
@@ -125,7 +134,9 @@ export default function App() {
         }
         setAuthError('');
         setPage('oficina');
-      } else if (hash === '#boleto') {
+      } else if (hash === '#boleto' || getUrlCode()) {
+        const directCode = getUrlCode();
+        if (directCode) setCode(directCode);
         setPage('ticket');
       } else {
         setPage('search');

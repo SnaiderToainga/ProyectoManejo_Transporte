@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace('/api', '');
+const API_URL = import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api';
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/api\/?$/, '');
+
+const getComprobanteUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const cleanBase = BACKEND_URL.replace(/\/$/, '');
+  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  return `${cleanBase}${cleanPath}`;
+};
 
 const ValidacionComprobantes = () => {
   const [reservas, setReservas] = useState([]);
@@ -98,7 +106,7 @@ const ValidacionComprobantes = () => {
                   <td className="py-2 px-4 border-b text-sm">
                     {reserva.comprobante_url ? (
                       <button 
-                        onClick={() => setModalImage(`${BACKEND_URL}${reserva.comprobante_url}`)}
+                        onClick={() => setModalImage(getComprobanteUrl(reserva.comprobante_url))}
                         className="text-blue-600 hover:underline font-medium"
                       >
                         Ver imagen
@@ -129,10 +137,37 @@ const ValidacionComprobantes = () => {
       )}
 
       {modalImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50" onClick={() => setModalImage(null)}>
-          <div className="bg-white p-4 rounded-lg max-w-2xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-bold mb-2">Comprobante de Pago</h3>
-            <img src={modalImage} alt="Comprobante" className="max-w-full h-auto" />
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" onClick={() => setModalImage(null)}>
+          <div className="bg-white p-5 rounded-lg max-w-2xl max-h-[90vh] overflow-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-800 text-lg">Comprobante de Pago</h3>
+              <button onClick={() => setModalImage(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+            </div>
+            
+            <div className="text-center my-2">
+              <img 
+                src={modalImage} 
+                alt="Comprobante de pago" 
+                className="max-w-full max-h-[60vh] mx-auto rounded border border-gray-200"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const fb = document.getElementById('comprobante-fallback-msg');
+                  if (fb) fb.style.display = 'block';
+                }}
+              />
+              <div id="comprobante-fallback-msg" style={{ display: 'none' }} className="p-4 bg-yellow-50 text-yellow-800 rounded border border-yellow-200 text-sm">
+                <p>El comprobante es un archivo PDF o requiere visualización directa externa.</p>
+              </div>
+              <a 
+                href={modalImage} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="mt-3 inline-block text-sm text-blue-600 hover:text-blue-800 underline font-medium"
+              >
+                ↗ Abrir comprobante original en nueva pestaña
+              </a>
+            </div>
+
             <button 
               onClick={() => setModalImage(null)}
               className="mt-4 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 w-full"
