@@ -1,4 +1,3 @@
-// backend/src/services/emailService.js
 const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
 const fs = require('fs');
@@ -27,15 +26,22 @@ async function generarCodigoQR(datosBoleto) {
 }
 
 /**
- * Guarda el boleto como archivo HTML local de respaldo
+ * Guarda una copia local del boleto en HTML para respaldo / desarrollo
  */
 function guardarBoletoLocal(htmlContent) {
-  const dir = path.join(__dirname, '../../uploads/boletos-html');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const fileName = `boleto-${Date.now()}.html`;
-  const filePath = path.join(dir, fileName);
-  fs.writeFileSync(filePath, htmlContent, 'utf8');
-  return { filePath, fileName };
+  try {
+    const dir = path.join(__dirname, '../../uploads/boletos');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const fileName = `boleto-${Date.now()}.html`;
+    const filePath = path.join(dir, fileName);
+    fs.writeFileSync(filePath, htmlContent, 'utf-8');
+    return { exito: true, filePath: `/uploads/boletos/${fileName}` };
+  } catch (error) {
+    console.error('Error guardando boleto localmente:', error);
+    return { exito: false, error: error.message };
+  }
 }
 
 /**
@@ -48,18 +54,21 @@ function generarPlantillaBoleto(datos, qrSrc, enlaceBoleto) {
   return `
     <!DOCTYPE html>
     <html>
-    <head><meta charset="utf-8"/></head>
-    <body style="margin: 0; padding: 20px; background-color: #f1f5f9; font-family: Arial, sans-serif;">
-      <div style="max-width: 550px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #cbd5e1;">
-        <div style="background-color: #1e3a8a; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 22px;">🚌 En ruta - Transporte UTA</h1>
-          <p style="margin: 5px 0 0; font-size: 13px; opacity: 0.9;">Comprobante Oficial de Abordaje</p>
+    <head>
+      <meta charset="UTF-8">
+      <title>Boleto Confirmado - ${cooperativa}</title>
+    </head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; padding: 20px; margin: 0;">
+      <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
+        <div style="background-color: #1e3a8a; color: #ffffff; padding: 24px 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">🚌 En ruta - Transporte UTA</h1>
+          <p style="margin: 4px 0 0; opacity: 0.85; font-size: 13px;">Comprobante Oficial de Abordaje</p>
         </div>
-        
-        <div style="padding: 24px;">
+
+        <div style="padding: 24px 20px;">
           <div style="text-align: center; margin-bottom: 20px;">
-            <span style="background-color: #dcfce7; color: #166534; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 12px;">PAGO VALIDADO</span>
-            <h2 style="color: #0f172a; margin: 10px 0 0; font-size: 20px;">${origen} ➔ ${destino}</h2>
+            <span style="background-color: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">Pago Validado</span>
+            <h2 style="margin: 12px 0 0; color: #0f172a; font-size: 20px; font-weight: 700;">${origen} &rarr; ${destino}</h2>
             <p style="color: #64748b; margin: 4px 0 0; font-size: 14px;">${cooperativa}</p>
           </div>
 
@@ -106,7 +115,8 @@ function generarPlantillaBoleto(datos, qrSrc, enlaceBoleto) {
 }
 
 /**
- * Despacha el boleto digital por correo electrónico con soporte para Gmail (CID)
+ * Envía el correo electrónico con el boleto y código QR adjunto/embebido
+ * Soporta Brevo (puerto 2525 para Render), Resend (HTTPS puerto 443) y Gmail SMTP directo.
  */
 async function enviarBoletoEmail(datos) {
   const { emailDestinatario, cooperativa, origen, destino, fecha, hora, asientos, total, reservaId } = datos;
@@ -122,23 +132,73 @@ async function enviarBoletoEmail(datos) {
       asientos: Array.isArray(asientos) ? asientos.join(', ') : asientos
     });
 
-    // Si hay credenciales SMTP configuradas en .env, enviar por Gmail con CID embebido
-    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    const qrBase64Clean = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+    const qrBuffer = Buffer.from(qrBase64Clean, 'base64');
+
+    // Opción 1: Resend vía HTTPS (puerto 443 estándar, compatible 100% con Render sin bloqueos de puerto)
+    if (process.env.RESEND_API_KEY) {
       try {
-        const transportador = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS.replace(/\s+/g, '')
-          }
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: process.env.RESEND_FROM || 'En ruta - Transporte UTA <onboarding@resend.dev>',
+            to: [emailDestinatario],
+            subject: `🎫 Boleto Confirmado: ${origen} a ${destino} - ${cooperativa}`,
+            html: generarPlantillaBoleto(datos, qrDataUrl, enlaceBoleto)
+          })
         });
 
-        // Convertir Base64 a Buffer binario para adjunto embebido CID
-        const qrBase64Clean = qrDataUrl.replace(/^data:image\/png;base64,/, '');
-        const qrBuffer = Buffer.from(qrBase64Clean, 'base64');
+        const resendJson = await resendRes.json();
+        if (resendRes.ok) {
+          console.log(`📨 [RESEND HTTPS ENVIADO] Boleto despachado a: ${emailDestinatario} (ID: ${resendJson.id})`);
+          return { exito: true, enviadoReal: true, messageId: resendJson.id, qrDataUrl, enlaceBoleto };
+        } else {
+          console.warn(`⚠️ [RESEND API RECHAZO]:`, resendJson);
+        }
+      } catch (resendErr) {
+        console.warn(`⚠️ Error en Resend HTTPS (${resendErr.message}). Probando transporte SMTP...`);
+      }
+    }
+
+    // Opción 2: SMTP Relay (Brevo en puerto 2525 / host personalizado o Gmail directo)
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = Number(process.env.SMTP_PORT) || (smtpHost ? 2525 : 587);
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : '';
+    const remitente = process.env.SMTP_FROM || `"En ruta - Transporte UTA" <${smtpUser}>`;
+
+    if (smtpUser && smtpPass) {
+      try {
+        let transportador;
+        if (smtpHost) {
+          transportador = nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpPort === 465,
+            auth: {
+              user: smtpUser,
+              pass: smtpPass
+            },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000
+          });
+        } else {
+          transportador = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+              user: smtpUser,
+              pass: smtpPass
+            },
+            connectionTimeout: 10000
+          });
+        }
 
         const info = await transportador.sendMail({
-          from: `"En ruta - Transporte UTA" <${process.env.SMTP_USER}>`,
+          from: remitente,
           to: emailDestinatario,
           subject: `🎫 Boleto Confirmado: ${origen} a ${destino} - ${cooperativa}`,
           html: generarPlantillaBoleto(datos, 'cid:codigo_qr_boleto', enlaceBoleto),
@@ -146,15 +206,17 @@ async function enviarBoletoEmail(datos) {
             {
               filename: 'boleto-qr.png',
               content: qrBuffer,
+              contentType: 'image/png',
+              contentDisposition: 'inline',
               cid: 'codigo_qr_boleto'
             }
           ]
         });
 
-        console.log(`📨 [GMAIL ENVIADO] Boleto despachado con CID a: ${emailDestinatario} (ID: ${info.messageId})`);
+        console.log(`📨 [SMTP ENVIADO] Boleto despachado con éxito a: ${emailDestinatario} (ID: ${info.messageId})`);
         return { exito: true, enviadoReal: true, messageId: info.messageId, qrDataUrl, enlaceBoleto };
       } catch (smtpErr) {
-        console.warn(`⚠️ Error en despacho Gmail (${smtpErr.message}). Generando copia local...`);
+        console.warn(`⚠️ Error en despacho SMTP (${smtpErr.message}). Generando copia local...`);
       }
     }
 
