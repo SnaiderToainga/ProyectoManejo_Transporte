@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { BusFront, Lock, Mail, ShieldAlert, ArrowRight, UserCheck } from 'lucide-react';
 
+const API_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/$/, '');
+
 export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
@@ -31,7 +33,7 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
     setError('');
 
     try {
-      const resp = await fetch('/api/admin/login', {
+      const resp = await fetch(`${API_URL}/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo, password })
@@ -62,10 +64,12 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
       const usuarioSimulado = usuariosPrueba.find(u => u.correo.toLowerCase() === correo.toLowerCase());
       if (usuarioSimulado) {
         const sesion = {
-          id: 99,
+          id: usuarioSimulado.rol === 'ADMIN_COOP' ? 1 : 99,
           nombre: usuarioSimulado.label,
           correo: usuarioSimulado.correo,
-          rol: usuarioSimulado.rol
+          rol: usuarioSimulado.rol,
+          cooperativa_id: usuarioSimulado.rol === 'ADMIN_COOP' ? 1 : null,
+          cooperativa_nombre: usuarioSimulado.rol === 'ADMIN_COOP' ? 'Cooperativa de Transportes CITA' : null
         };
         localStorage.setItem('transporte_auth', JSON.stringify(sesion));
         setRolDetectado(usuarioSimulado.rol);

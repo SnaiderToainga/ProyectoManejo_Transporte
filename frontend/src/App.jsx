@@ -201,23 +201,26 @@ export default function App() {
            <button
             className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
             onClick={() => {
-            if (usuario) {
-            // Si ya hay sesión, permite cerrar sesión o ir a admin
-            if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
-             localStorage.removeItem('transporte_auth');
-             setUsuario(null);
-             goLogin();
-            }
-           } else {
-           goLogin();
-           }
-             }}
-            >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-           <Shield size={15} />
-           {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : 'Cerrar Sesión') : 'Administración'}
-             </span>
-        </button>
+              if (usuario) {
+                if (page !== 'admin' && (usuario.rol === 'SUPERADMIN' || usuario.rol === 'ADMIN_COOP')) {
+                  goAdmin();
+                } else {
+                  if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
+                    localStorage.removeItem('transporte_auth');
+                    setUsuario(null);
+                    goLogin();
+                  }
+                }
+              } else {
+                goLogin();
+              }
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Shield size={15} />
+              {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : usuario.rol === 'ADMIN_COOP' ? 'Gerencia CITA' : 'Cerrar Sesión') : 'Administración'}
+            </span>
+          </button>
           </nav>
 
           <span className="header-note">
@@ -229,6 +232,7 @@ export default function App() {
       <main id="contenido" className="shell main-content">
         {page === 'admin' ? (
           <GestionCooperativas
+            usuario={usuario}
             onLogout={() => {
               setUsuario(null);
               goLogin();

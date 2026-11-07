@@ -134,6 +134,7 @@ async function enviarBoletoEmail(datos) {
 
     const qrBase64Clean = qrDataUrl.replace(/^data:image\/png;base64,/, '');
     const qrBuffer = Buffer.from(qrBase64Clean, 'base64');
+    const publicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(enlaceBoleto)}&color=1e3a8a`;
 
     // Opción 1: Resend vía HTTPS (puerto 443 estándar, compatible 100% con Render sin bloqueos de puerto)
     if (process.env.RESEND_API_KEY) {
@@ -148,7 +149,13 @@ async function enviarBoletoEmail(datos) {
             from: process.env.RESEND_FROM || 'En ruta - Transporte UTA <onboarding@resend.dev>',
             to: [emailDestinatario],
             subject: `🎫 Boleto Confirmado: ${origen} a ${destino} - ${cooperativa}`,
-            html: generarPlantillaBoleto(datos, qrDataUrl, enlaceBoleto)
+            html: generarPlantillaBoleto(datos, publicQrUrl, enlaceBoleto),
+            attachments: [
+              {
+                filename: 'boleto-qr.png',
+                content: qrBase64Clean
+              }
+            ]
           })
         });
 

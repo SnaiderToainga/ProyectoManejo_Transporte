@@ -1,9 +1,10 @@
 // frontend/src/pages/Admin/PersonalizacionBranding.jsx
 import React, { useState } from 'react';
 
-export default function PersonalizacionBranding({ cooperativas, onActualizarCoop }) {
-  const [selectedId, setSelectedId] = useState(cooperativas[0]?.id || 1);
-  const coop = cooperativas.find((c) => c.id === Number(selectedId)) || cooperativas[0];
+export default function PersonalizacionBranding({ cooperativas = [], onActualizarCoop, cooperativa = null, onClose = null, onGuardar = null }) {
+  const lista = cooperativas && cooperativas.length > 0 ? cooperativas : (cooperativa ? [cooperativa] : []);
+  const [selectedId, setSelectedId] = useState(cooperativa?.id || lista[0]?.id || 1);
+  const coop = cooperativa || lista.find((c) => c.id === Number(selectedId)) || lista[0];
 
   const [color, setColor] = useState(coop?.color_distintivo || '#1D4ED8');
   const [logoUrl, setLogoUrl] = useState(coop?.logo_url || '');
@@ -35,15 +36,21 @@ export default function PersonalizacionBranding({ cooperativas, onActualizarCoop
 
   const handleGuardarCambios = (e) => {
     e.preventDefault();
-    if (onActualizarCoop && coop) {
-      onActualizarCoop(coop.id, {
+    if (coop) {
+      const datosActualizados = {
+        ...coop,
         color_distintivo: color,
         logo_url: logoUrl,
         telefono,
         direccion
-      });
+      };
+      if (onGuardar) onGuardar(datosActualizados);
+      if (onActualizarCoop) onActualizarCoop(coop.id, datosActualizados);
       setGuardadoMsg(true);
-      setTimeout(() => setGuardadoMsg(false), 3000);
+      setTimeout(() => {
+        setGuardadoMsg(false);
+        if (onClose) onClose();
+      }, 1200);
     }
   };
 
@@ -52,7 +59,19 @@ export default function PersonalizacionBranding({ cooperativas, onActualizarCoop
   }
 
   return (
-    <div style={styles.container}>
+    <div style={onClose ? styles.modalWrapper : {}}>
+      <div style={styles.container}>
+        {onClose && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
+            <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0F172A', fontWeight: '800' }}>Personalización de Identidad Visual · {coop?.nombre}</h2>
+            <button
+              onClick={onClose}
+              style={{ background: '#F1F5F9', border: 'none', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontWeight: '700', color: '#475569' }}
+            >
+              ✕ Cerrar
+            </button>
+          </div>
+        )}
       {/* Selector de Cooperativa */}
       <div style={styles.selectorBar}>
         <label style={styles.selectorLabel}>Cooperativa seleccionada:</label>
@@ -61,7 +80,7 @@ export default function PersonalizacionBranding({ cooperativas, onActualizarCoop
           onChange={(e) => handleSelectCoop(e.target.value)}
           style={styles.selectCoop}
         >
-          {cooperativas.map((c) => (
+          {lista.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nombre} ({c.ruc})
             </option>
@@ -255,10 +274,26 @@ export default function PersonalizacionBranding({ cooperativas, onActualizarCoop
         </div>
       </div>
     </div>
+    </div>
   );
 }
 
 const styles = {
+  modalWrapper: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backdropFilter: 'blur(4px)',
+    zIndex: 9999,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '1.5rem',
+    overflowY: 'auto'
+  },
   container: {
     display: 'flex',
     flexDirection: 'column',

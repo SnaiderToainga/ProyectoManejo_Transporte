@@ -306,8 +306,10 @@ exports.getHojaRutaHoy = async (req, res) => {
     const query = `
       SELECT 
         pv.id,
+        pv.id AS programacion_id,
         pv.fecha_viaje,
         pv.hora_salida_programada,
+        pv.hora_salida_programada AS hora_salida,
         pv.estado,
         pv.estado AS estado_viaje,
         f.origen,
@@ -345,12 +347,16 @@ exports.getHojaRutaHoy = async (req, res) => {
 exports.actualizarEstadoViaje = async (req, res) => {
   const { id } = req.params;
   const { estado, estado_viaje } = req.body;
-  const nuevoEstado = estado || estado_viaje;
+  const viajeId = parseInt(id, 10);
+  if (isNaN(viajeId)) {
+    return res.status(400).json({ error: 'ID de viaje inválido' });
+  }
+  const nuevoEstado = (estado || estado_viaje || '').toUpperCase();
 
   try {
     const { rows, rowCount } = await pool.query(
       `UPDATE programacion_viajes SET estado = $1 WHERE id = $2 RETURNING *`,
-      [nuevoEstado, id]
+      [nuevoEstado, viajeId]
     );
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Viaje programado no encontrado' });
