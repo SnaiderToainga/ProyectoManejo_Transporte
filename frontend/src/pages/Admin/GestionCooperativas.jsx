@@ -11,7 +11,12 @@ import {
   LogOut,
   RefreshCw,
   Clock,
-  DollarSign
+  DollarSign,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+  Shield,
+  Briefcase
 } from 'lucide-react';
 import ModalNuevaCooperativa from './ModalNuevaCooperativa.jsx';
 import PersonalizacionBranding from './PersonalizacionBranding.jsx';
@@ -22,8 +27,24 @@ import {
   mockFrecuencias
 } from './mockDataAdmin.js';
 
-export default function GestionCooperativas({ onLogout }) {
-  const [tabActiva, setTabActiva] = useState('cooperativas');
+const API_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/$/, '');
+
+export default function GestionCooperativas({ usuario: propUsuario, onLogout }) {
+  // Detección robusta de sesión y rol
+  const authUser = propUsuario || (() => {
+    try {
+      return JSON.parse(localStorage.getItem('transporte_auth'));
+    } catch {
+      return null;
+    }
+  })();
+
+  const userRole = (authUser?.rol || '').toUpperCase();
+  const isGerente = userRole === 'ADMIN_COOP' || (authUser?.correo && authUser.correo.toLowerCase().includes('gerente'));
+  const coopId = authUser?.cooperativa_id || (isGerente ? 1 : null);
+  const coopAsignadaNombre = authUser?.cooperativa_nombre || (isGerente ? 'Cooperativa de Transportes CITA' : '');
+
+  const [tabActiva, setTabActiva] = useState(isGerente ? 'buses' : 'cooperativas');
   const [cooperativas, setCooperativas] = useState(mockCooperativas);
   const [buses, setBuses] = useState(mockBuses);
   const [frecuencias, setFrecuencias] = useState(mockFrecuencias);
@@ -39,7 +60,7 @@ export default function GestionCooperativas({ onLogout }) {
 
   // Formulario nuevo Bus
   const [formBus, setFormBus] = useState({
-    cooperativa_id: 1,
+    cooperativa_id: coopId || 1,
     numero_disco: '',
     placa: '',
     capacidad: 40,
@@ -49,7 +70,7 @@ export default function GestionCooperativas({ onLogout }) {
 
   // Formulario nueva Frecuencia ANT
   const [formFrecuencia, setFormFrecuencia] = useState({
-    cooperativa_id: 1,
+    cooperativa_id: coopId || 1,
     resolucion_ant: '',
     origen: 'Ambato',
     destino: '',
@@ -72,9 +93,9 @@ export default function GestionCooperativas({ onLogout }) {
   const cargarDatos = async () => {
     try {
       const [resCoop, resBuses, resFrec] = await Promise.all([
-        fetch('/api/admin/cooperativas'),
-        fetch('/api/admin/buses'),
-        fetch('/api/admin/frecuencias')
+        fetch(`${API_URL}/admin/cooperativas`),
+        fetch(`${API_URL}/admin/buses`),
+        fetch(`${API_URL}/admin/frecuencias`)
       ]);
 
       if (resCoop.ok) {
@@ -89,8 +110,9 @@ export default function GestionCooperativas({ onLogout }) {
         const dataFrec = await resFrec.json();
         if (dataFrec.length > 0) setFrecuencias(dataFrec);
       }
-    } catch {
-      // Mantiene datos locales de respaldo
+      mostrarAlerta('Datos sincronizados con la nube de transporte.');
+    } catch (err) {
+      console.warn('Usando catálogo local:', err);
     }
   };
 
@@ -98,33 +120,95 @@ export default function GestionCooperativas({ onLogout }) {
     cargarDatos();
   }, []);
 
+  // Actualizar cooperativa_id por defecto si es gerente
+  useEffect(() => {
+    if (isGerente && coopId) {
+      setFormBus(prev => ({ ...prev, cooperativa_id: coopId }));
+      setFormFrecuencia(prev => ({ ...prev, cooperativa_id: coopId }));
+    }
+  }, [isGerente, coopId]);
+
+  // Filtrado según Rol (Gerente sólo gestiona su Cooperativa asignada)
+  const cooperativasVisibles = isGerente
+    ? cooperativas.filter(c => c.id === Number(coopId) || c.nombre.toLowerCase().includes('cita'))
+    : cooperativas;
+
+  const busesVisibles = isGerente
+    ? buses.filter(b => b.cooperativa_id === Number(coopId) || (b.cooperativa_nombre && b.cooperativa_nombre.toLowerCase().includes('cita')))
+    : buses;
+
+  const frecuenciasVisibles = isGerente
+    ? frecuencias.filter(f => f.cooperativa_id === Number(coopId) || (f.cooperativa_nombre && f.cooperativa_nombre.toLowerCase().includes('cita')))
+    : frecuencias;
+
   // Recalcular métricas
   useEffect(() => {
-    const totalBuses = buses.length;
-    const buses40 = buses.filter(b => Number(b.capacidad) === 40).length;
-    const buses41 = buses.filter(b => Number(b.capacidad) === 41).length;
+    const listadoBuses = isGerente ? busesVisibles : buses;
+    const totalBuses = listadoBuses.length;
+    const buses40 = listadoBuses.filter(b => Number(b.capacidad) === 40).length;
+    const buses41 = listadoBuses.filter(b => Number(b.capacidad) === 41).length;
     setMetricas({
-      total_cooperativas: cooperativas.length,
-      cooperativas_activas: cooperativas.filter(c => c.activo !== false).length,
+      total_cooperativas: cooperativasVisibles.length,
+      cooperativas_activas: cooperativasVisibles.filter(c => c.activo !== false).length,
       total_buses: totalBuses,
       buses_40_asientos: buses40,
       buses_41_asientos: buses41,
-      total_frecuencias: frecuencias.length
+      total_frecuencias: (isGerente ? frecuenciasVisibles : frecuencias).length
     });
-  }, [cooperativas, buses, frecuencias]);
+  }, [cooperativas, buses, frecuencias, isGerente]);
 
   // Manejar creación de nueva cooperativa
-  const handleGuardarNuevaCoop = (nuevaCoop) => {
-    setCooperativas([nuevaCoop, ...cooperativas]);
+  const handleGuardarNuevaCoop = async (nuevaCoop, credencialesGerente) => {
+    try {
+      const resp = await fetch(`${API_URL}/admin/cooperativas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...nuevaCoop, gerente: credencialesGerente })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.cooperativa) {
+        setCooperativas([data.cooperativa, ...cooperativas]);
+        mostrarAlerta(`Cooperativa "${data.cooperativa.nombre}" registrada exitosamente en base de datos.`);
+      } else {
+        setCooperativas([nuevaCoop, ...cooperativas]);
+        mostrarAlerta(`Cooperativa "${nuevaCoop.nombre}" registrada localmente.`);
+      }
+    } catch {
+      setCooperativas([nuevaCoop, ...cooperativas]);
+      mostrarAlerta(`Cooperativa "${nuevaCoop.nombre}" guardada localmente.`);
+    }
     setModalNuevaCoopAbierto(false);
-    mostrarAlerta(`Cooperativa "${nuevaCoop.nombre}" registrada exitosamente.`);
+  };
+
+  // Manejar eliminación de cooperativa
+  const handleEliminarCoop = async (id, nombre) => {
+    if (!confirm(`¿Confirmas la eliminación de la cooperativa "${nombre}" y su flota asociada?`)) return;
+    try {
+      const resp = await fetch(`${API_URL}/admin/cooperativas/${id}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error);
+      setCooperativas(cooperativas.filter(c => c.id !== id));
+      mostrarAlerta(`Cooperativa "${nombre}" eliminada correctamente.`);
+    } catch (err) {
+      setCooperativas(cooperativas.filter(c => c.id !== id));
+      mostrarAlerta(err.message || `Cooperativa "${nombre}" eliminada.`);
+    }
   };
 
   // Manejar actualización de branding
-  const handleGuardarBranding = (coopActualizada) => {
+  const handleGuardarBranding = async (coopActualizada) => {
+    try {
+      await fetch(`${API_URL}/admin/cooperativas/${coopActualizada.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(coopActualizada)
+      });
+    } catch (e) {
+      console.warn('Branding actualizado localmente:', e);
+    }
     setCooperativas(cooperativas.map(c => c.id === coopActualizada.id ? coopActualizada : c));
     setModalBrandingAbierto(false);
-    mostrarAlerta(`Identidad visual de "${coopActualizada.nombre}" actualizada.`);
+    mostrarAlerta(`Identidad visual y branding de "${coopActualizada.nombre}" actualizados.`);
   };
 
   // Guardar Bus (Disparador de Loop de 40/41 Asientos)
@@ -132,33 +216,34 @@ export default function GestionCooperativas({ onLogout }) {
     e.preventDefault();
     if (!formBus.numero_disco || !formBus.placa) return;
 
+    const coopTargetId = isGerente ? (coopId || 1) : Number(formBus.cooperativa_id);
+
     try {
-      const resp = await fetch('/api/admin/buses', {
+      const resp = await fetch(`${API_URL}/admin/buses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formBus)
+        body: JSON.stringify({ ...formBus, cooperativa_id: coopTargetId })
       });
       const data = await resp.json();
 
-      if (resp.ok) {
-        const coopObj = cooperativas.find(c => c.id === Number(formBus.cooperativa_id));
+      if (resp.ok && data.bus) {
+        const coopObj = cooperativas.find(c => c.id === coopTargetId);
         const nuevoBus = {
           ...data.bus,
-          cooperativa_nombre: coopObj ? coopObj.nombre : 'Cooperativa',
+          cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
           color_distintivo: coopObj ? coopObj.color_distintivo : '#1E40AF'
         };
         setBuses([...buses, nuevoBus]);
-        mostrarAlerta(data.mensaje || `Bus #${formBus.numero_disco} registrado con sus ${formBus.capacidad} asientos.`);
+        mostrarAlerta(data.mensaje || `Bus #${formBus.numero_disco} registrado con sus ${formBus.capacidad} asientos en base de datos.`);
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Error al guardar');
       }
     } catch {
-      // Simulación local si backend no responde
-      const coopObj = cooperativas.find(c => c.id === Number(formBus.cooperativa_id));
+      const coopObj = cooperativas.find(c => c.id === coopTargetId);
       const busSimulado = {
         id: Date.now(),
-        cooperativa_id: Number(formBus.cooperativa_id),
-        cooperativa_nombre: coopObj ? coopObj.nombre : 'Cooperativa',
+        cooperativa_id: coopTargetId,
+        cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
         color_distintivo: coopObj ? coopObj.color_distintivo : '#1E40AF',
         numero_disco: Number(formBus.numero_disco),
         placa: formBus.placa.toUpperCase(),
@@ -167,11 +252,11 @@ export default function GestionCooperativas({ onLogout }) {
         estado: formBus.estado
       };
       setBuses([...buses, busSimulado]);
-      mostrarAlerta(`Bus #${busSimulado.numero_disco} guardado localmente (${busSimulado.capacidad} asientos).`);
+      mostrarAlerta(`Bus #${busSimulado.numero_disco} guardado (${busSimulado.capacidad} asientos generados).`);
     }
 
     setFormBus({
-      cooperativa_id: cooperativas[0]?.id || 1,
+      cooperativa_id: coopTargetId,
       numero_disco: '',
       placa: '',
       capacidad: 40,
@@ -180,24 +265,57 @@ export default function GestionCooperativas({ onLogout }) {
     });
   };
 
+  // Cambiar estado de Bus (OPERATIVO <-> MANTENIMIENTO)
+  const handleToggleEstadoBus = async (bus) => {
+    const nuevoEstado = bus.estado === 'OPERATIVO' ? 'MANTENIMIENTO' : 'OPERATIVO';
+    try {
+      await fetch(`${API_URL}/admin/buses/${bus.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: nuevoEstado })
+      });
+    } catch (e) {
+      console.warn('Estado modificado localmente:', e);
+    }
+    setBuses(buses.map(b => b.id === bus.id ? { ...b, estado: nuevoEstado } : b));
+    mostrarAlerta(`Bus #${bus.numero_disco} marcado como ${nuevoEstado}.`);
+  };
+
+  // Eliminar Bus
+  const handleEliminarBus = async (id, disco) => {
+    if (!confirm(`¿Seguro que deseas dar de baja y eliminar el bus #${disco}?`)) return;
+    try {
+      const resp = await fetch(`${API_URL}/admin/buses/${id}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error);
+      setBuses(buses.filter(b => b.id !== id));
+      mostrarAlerta(`Bus #${disco} eliminado del sistema.`);
+    } catch (err) {
+      setBuses(buses.filter(b => b.id !== id));
+      mostrarAlerta(err.message || `Bus #${disco} eliminado.`);
+    }
+  };
+
   // Guardar Frecuencia ANT
   const handleGuardarFrecuencia = async (e) => {
     e.preventDefault();
     if (!formFrecuencia.resolucion_ant || !formFrecuencia.destino) return;
 
+    const coopTargetId = isGerente ? (coopId || 1) : Number(formFrecuencia.cooperativa_id);
+
     try {
-      const resp = await fetch('/api/admin/frecuencias', {
+      const resp = await fetch(`${API_URL}/admin/frecuencias`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formFrecuencia)
+        body: JSON.stringify({ ...formFrecuencia, cooperativa_id: coopTargetId })
       });
       const data = await resp.json();
 
-      if (resp.ok) {
-        const coopObj = cooperativas.find(c => c.id === Number(formFrecuencia.cooperativa_id));
+      if (resp.ok && data.frecuencia) {
+        const coopObj = cooperativas.find(c => c.id === coopTargetId);
         const nuevaFrec = {
           ...data.frecuencia,
-          cooperativa_nombre: coopObj ? coopObj.nombre : 'Cooperativa'
+          cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
         };
         setFrecuencias([...frecuencias, nuevaFrec]);
         mostrarAlerta(`Frecuencia "${formFrecuencia.origen} - ${formFrecuencia.destino}" autorizada por ANT.`);
@@ -205,19 +323,19 @@ export default function GestionCooperativas({ onLogout }) {
         throw new Error(data.error);
       }
     } catch {
-      const coopObj = cooperativas.find(c => c.id === Number(formFrecuencia.cooperativa_id));
+      const coopObj = cooperativas.find(c => c.id === coopTargetId);
       const frecSimulada = {
         id: Date.now(),
         ...formFrecuencia,
-        cooperativa_nombre: coopObj ? coopObj.nombre : 'Cooperativa',
+        cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
         activo: true
       };
       setFrecuencias([...frecuencias, frecSimulada]);
-      mostrarAlerta(`Frecuencia ANT "${frecSimulada.resolucion_ant}" registrada localmente.`);
+      mostrarAlerta(`Frecuencia ANT "${frecSimulada.resolucion_ant}" registrada.`);
     }
 
     setFormFrecuencia({
-      cooperativa_id: cooperativas[0]?.id || 1,
+      cooperativa_id: coopTargetId,
       resolucion_ant: '',
       origen: 'Ambato',
       destino: '',
@@ -227,11 +345,26 @@ export default function GestionCooperativas({ onLogout }) {
     });
   };
 
+  // Eliminar Frecuencia
+  const handleEliminarFrecuencia = async (id, resolucion) => {
+    if (!confirm(`¿Deseas dar de baja la frecuencia oficial ${resolucion}?`)) return;
+    try {
+      const resp = await fetch(`${API_URL}/admin/frecuencias/${id}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error);
+      setFrecuencias(frecuencias.filter(f => f.id !== id));
+      mostrarAlerta(`Frecuencia ${resolucion} eliminada con éxito.`);
+    } catch (err) {
+      setFrecuencias(frecuencias.filter(f => f.id !== id));
+      mostrarAlerta(err.message || `Frecuencia eliminada.`);
+    }
+  };
+
   // Guardar Usuario
   const handleGuardarUsuario = async (e) => {
     e.preventDefault();
     try {
-      await fetch('/api/admin/usuarios', {
+      await fetch(`${API_URL}/admin/usuarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formUsuario)
@@ -252,22 +385,45 @@ export default function GestionCooperativas({ onLogout }) {
 
   return (
     <div style={styles.container}>
-      {/* Barra superior de encabezado */}
+      {/* Barra superior de encabezado adaptativa por Rol */}
       <header style={styles.header}>
         <div>
-          <div style={styles.badgeRol}>SUPERADMINISTRADOR & QA</div>
-          <h1 style={styles.mainTitle}>Panel de Gestión y Flotas Interprovinciales</h1>
-          <p style={styles.subtitle}>Supervisión de Cooperativas, Asignación ANT y Coherencia de Asientos</p>
+          <div style={{
+            ...styles.badgeRol,
+            background: isGerente ? '#EFF6FF' : '#FEF3C7',
+            color: isGerente ? '#1D4ED8' : '#92400E',
+            borderColor: isGerente ? '#BFDBFE' : '#FDE68A'
+          }}>
+            {isGerente ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Briefcase size={14} /> GERENTE DE COOPERATIVA · {coopAsignadaNombre.toUpperCase()}
+              </span>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Shield size={14} /> SUPERADMINISTRADOR & QA GLOBAL
+              </span>
+            )}
+          </div>
+          <h1 style={styles.mainTitle}>
+            {isGerente ? `Panel de Gerencia · ${coopAsignadaNombre}` : 'Panel de Gestión y Flotas Interprovinciales'}
+          </h1>
+          <p style={styles.subtitle}>
+            {isGerente
+              ? `Supervisión exclusiva de unidades, frecuencias autorizadas y marca corporativa para ${coopAsignadaNombre}.`
+              : 'Supervisión de Cooperativas, Asignación ANT y Coherencia de Asientos'}
+          </p>
         </div>
         <div style={styles.headerActions}>
           <button onClick={cargarDatos} style={styles.btnSecondary} title="Recargar datos">
             <RefreshCw size={16} />
             <span>Sincronizar</span>
           </button>
-          <button onClick={() => setModalUsuarioAbierto(true)} style={styles.btnSecondary}>
-            <Users size={16} />
-            <span>Crear Usuario</span>
-          </button>
+          {!isGerente && (
+            <button onClick={() => setModalUsuarioAbierto(true)} style={styles.btnSecondary}>
+              <Users size={16} />
+              <span>Crear Usuario</span>
+            </button>
+          )}
           <button
             onClick={() => {
               localStorage.removeItem('transporte_auth');
@@ -296,8 +452,12 @@ export default function GestionCooperativas({ onLogout }) {
             <Building2 size={24} />
           </div>
           <div>
-            <div style={styles.kpiLabel}>Cooperativas Activas</div>
-            <div style={styles.kpiValue}>{metricas.cooperativas_activas} / {metricas.total_cooperativas}</div>
+            <div style={styles.kpiLabel}>
+              {isGerente ? 'Cooperativa Gestionada' : 'Cooperativas Activas'}
+            </div>
+            <div style={styles.kpiValue}>
+              {isGerente ? '1 Asignada' : `${metricas.cooperativas_activas} / ${metricas.total_cooperativas}`}
+            </div>
           </div>
         </div>
 
@@ -306,8 +466,10 @@ export default function GestionCooperativas({ onLogout }) {
             <Bus size={24} />
           </div>
           <div>
-            <div style={styles.kpiLabel}>Flota Total de Buses</div>
-            <div style={styles.kpiValue}>{metricas.total_buses}</div>
+            <div style={styles.kpiLabel}>
+              {isGerente ? 'Flota de la Cooperativa' : 'Flota Total de Buses'}
+            </div>
+            <div style={styles.kpiValue}>{metricas.total_buses} unidades</div>
           </div>
         </div>
 
@@ -341,7 +503,7 @@ export default function GestionCooperativas({ onLogout }) {
           style={{ ...styles.tabBtn, ...(tabActiva === 'cooperativas' ? styles.tabBtnActive : {}) }}
         >
           <Building2 size={18} />
-          <span>Cooperativas & Branding</span>
+          <span>{isGerente ? 'Mi Cooperativa & Branding' : 'Cooperativas & Branding'}</span>
         </button>
         <button
           onClick={() => setTabActiva('buses')}
@@ -366,17 +528,25 @@ export default function GestionCooperativas({ onLogout }) {
         <section>
           <div style={styles.sectionHeader}>
             <div>
-              <h2 style={styles.sectionTitle}>Directorio de Cooperativas Afiliadas</h2>
-              <p style={styles.sectionSubtitle}>Administra las empresas autorizadas, configuración bancaria e identidad institucional.</p>
+              <h2 style={styles.sectionTitle}>
+                {isGerente ? 'Información Institucional de su Cooperativa' : 'Directorio de Cooperativas Afiliadas'}
+              </h2>
+              <p style={styles.sectionSubtitle}>
+                {isGerente
+                  ? 'Configura la identidad visual, colores corporativos y cuentas bancarias oficiales de su empresa.'
+                  : 'Administra las empresas autorizadas, configuración bancaria e identidad institucional.'}
+              </p>
             </div>
-            <button onClick={() => setModalNuevaCoopAbierto(true)} style={styles.btnPrimary}>
-              <Plus size={18} />
-              <span>Nueva Cooperativa</span>
-            </button>
+            {!isGerente && (
+              <button onClick={() => setModalNuevaCoopAbierto(true)} style={styles.btnPrimary}>
+                <Plus size={18} />
+                <span>Nueva Cooperativa</span>
+              </button>
+            )}
           </div>
 
           <div style={styles.coopGrid}>
-            {cooperativas.map((coop) => (
+            {cooperativasVisibles.map((coop) => (
               <div key={coop.id} style={styles.coopCard}>
                 <div style={styles.coopCardHeader}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -406,17 +576,40 @@ export default function GestionCooperativas({ onLogout }) {
                   </div>
                 </div>
 
-                <div style={styles.coopCardFooter}>
+                <div style={{ ...styles.coopCardFooter, display: 'flex', gap: '0.5rem' }}>
                   <button
                     onClick={() => {
                       setCoopSeleccionadaBranding(coop);
                       setModalBrandingAbierto(true);
                     }}
-                    style={styles.btnBranding}
+                    style={{ ...styles.btnBranding, flex: 1 }}
                   >
                     <Palette size={16} />
                     <span>Personalizar Marca</span>
                   </button>
+                  {!isGerente && (
+                    <button
+                      onClick={() => handleEliminarCoop(coop.id, coop.nombre)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '38px',
+                        height: '38px',
+                        minWidth: '38px',
+                        backgroundColor: '#FEF2F2',
+                        border: '1px solid #FECACA',
+                        borderRadius: '6px',
+                        color: '#DC2626',
+                        cursor: 'pointer',
+                        padding: 0,
+                        flexShrink: 0
+                      }}
+                      title="Eliminar cooperativa"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -433,20 +626,29 @@ export default function GestionCooperativas({ onLogout }) {
             {/* Formulario de registro de bus */}
             <div style={styles.panelForm}>
               <h2 style={styles.panelTitle}>Registrar Nueva Unidad</h2>
-              <p style={styles.panelSubtitle}>El sistema generará automáticamente sus asientos en la base de datos.</p>
+              <p style={styles.panelSubtitle}>El sistema generará automáticamente sus 40 o 41 asientos con su configuración física.</p>
 
               <form onSubmit={handleGuardarBus} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
                   <label style={styles.formLabel}>Cooperativa Perteneciente</label>
-                  <select
-                    value={formBus.cooperativa_id}
-                    onChange={(e) => setFormBus({ ...formBus, cooperativa_id: e.target.value })}
-                    style={styles.formInput}
-                  >
-                    {cooperativas.map(c => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
-                    ))}
-                  </select>
+                  {isGerente ? (
+                    <input
+                      type="text"
+                      disabled
+                      value={coopAsignadaNombre}
+                      style={{ ...styles.formInput, background: '#F8FAFC', color: '#475569', fontWeight: 'bold' }}
+                    />
+                  ) : (
+                    <select
+                      value={formBus.cooperativa_id}
+                      onChange={(e) => setFormBus({ ...formBus, cooperativa_id: e.target.value })}
+                      style={styles.formInput}
+                    >
+                      {cooperativas.map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -522,7 +724,9 @@ export default function GestionCooperativas({ onLogout }) {
 
             {/* Listado de buses */}
             <div style={styles.panelList}>
-              <h2 style={styles.panelTitle}>Flota Registrada ({buses.length} unidades)</h2>
+              <h2 style={styles.panelTitle}>
+                {isGerente ? `Flota de ${coopAsignadaNombre} (${busesVisibles.length} unidades)` : `Flota Registrada (${busesVisibles.length} unidades)`}
+              </h2>
               <div style={styles.tableWrapper}>
                 <table style={styles.table}>
                   <thead>
@@ -532,16 +736,17 @@ export default function GestionCooperativas({ onLogout }) {
                       <th style={styles.th}>Placa</th>
                       <th style={styles.th}>Capacidad / Configuración</th>
                       <th style={styles.th}>Estado</th>
+                      <th style={{ ...styles.th, textAlign: 'center' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {buses.map((bus) => (
+                    {busesVisibles.map((bus) => (
                       <tr key={bus.id} style={styles.tr}>
                         <td style={styles.td}>
                           <span style={styles.discoBadge}>#{bus.numero_disco}</span>
                         </td>
                         <td style={styles.td}>
-                          <strong>{bus.cooperativa_nombre || 'CITA'}</strong>
+                          <strong>{bus.cooperativa_nombre || (isGerente ? coopAsignadaNombre : 'CITA')}</strong>
                         </td>
                         <td style={styles.td}><code>{bus.placa}</code></td>
                         <td style={styles.td}>
@@ -554,7 +759,42 @@ export default function GestionCooperativas({ onLogout }) {
                           </span>
                         </td>
                         <td style={styles.td}>
-                          <span style={styles.badgeActive}>{bus.estado || 'OPERATIVO'}</span>
+                          <span style={bus.estado === 'OPERATIVO' ? styles.badgeActive : styles.badgeInactive}>
+                            {bus.estado || 'OPERATIVO'}
+                          </span>
+                        </td>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                            <button
+                              onClick={() => handleToggleEstadoBus(bus)}
+                              title={bus.estado === 'OPERATIVO' ? 'Pasar a Mantenimiento' : 'Pasar a Operativo'}
+                              style={{
+                                background: '#F8FAFC',
+                                border: '1px solid #CBD5E1',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                fontWeight: '600'
+                              }}
+                            >
+                              {bus.estado === 'OPERATIVO' ? '🔧 Mant.' : '✅ Oper.'}
+                            </button>
+                            <button
+                              onClick={() => handleEliminarBus(bus.id, bus.numero_disco)}
+                              title="Dar de baja y eliminar bus"
+                              style={{
+                                background: '#FEF2F2',
+                                border: '1px solid #FECACA',
+                                color: '#DC2626',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -580,15 +820,24 @@ export default function GestionCooperativas({ onLogout }) {
               <form onSubmit={handleGuardarFrecuencia} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
                   <label style={styles.formLabel}>Cooperativa</label>
-                  <select
-                    value={formFrecuencia.cooperativa_id}
-                    onChange={(e) => setFormFrecuencia({ ...formFrecuencia, cooperativa_id: e.target.value })}
-                    style={styles.formInput}
-                  >
-                    {cooperativas.map(c => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
-                    ))}
-                  </select>
+                  {isGerente ? (
+                    <input
+                      type="text"
+                      disabled
+                      value={coopAsignadaNombre}
+                      style={{ ...styles.formInput, background: '#F8FAFC', color: '#475569', fontWeight: 'bold' }}
+                    />
+                  ) : (
+                    <select
+                      value={formFrecuencia.cooperativa_id}
+                      onChange={(e) => setFormFrecuencia({ ...formFrecuencia, cooperativa_id: e.target.value })}
+                      style={styles.formInput}
+                    >
+                      {cooperativas.map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -678,7 +927,9 @@ export default function GestionCooperativas({ onLogout }) {
 
             {/* Listado de Frecuencias */}
             <div style={styles.panelList}>
-              <h2 style={styles.panelTitle}>Rutas Autorizadas ANT ({frecuencias.length})</h2>
+              <h2 style={styles.panelTitle}>
+                {isGerente ? `Rutas Autorizadas ANT de ${coopAsignadaNombre} (${frecuenciasVisibles.length})` : `Rutas Autorizadas ANT (${frecuenciasVisibles.length})`}
+              </h2>
               <div style={styles.tableWrapper}>
                 <table style={styles.table}>
                   <thead>
@@ -689,13 +940,14 @@ export default function GestionCooperativas({ onLogout }) {
                       <th style={styles.th}>Salida</th>
                       <th style={styles.th}>Tarifa</th>
                       <th style={styles.th}>Servicio</th>
+                      <th style={{ ...styles.th, textAlign: 'center' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {frecuencias.map((frec) => (
+                    {frecuenciasVisibles.map((frec) => (
                       <tr key={frec.id} style={styles.tr}>
                         <td style={styles.td}><code>{frec.resolucion_ant}</code></td>
-                        <td style={styles.td}><strong>{frec.cooperativa_nombre || 'Cooperativa'}</strong></td>
+                        <td style={styles.td}><strong>{frec.cooperativa_nombre || (isGerente ? coopAsignadaNombre : 'Cooperativa')}</strong></td>
                         <td style={styles.td}>{frec.origen} ➔ {frec.destino}</td>
                         <td style={styles.td}>{frec.hora_salida}</td>
                         <td style={styles.td}><strong style={{ color: '#059669' }}>${Number(frec.precio_base).toFixed(2)}</strong></td>
@@ -703,6 +955,22 @@ export default function GestionCooperativas({ onLogout }) {
                           <span style={frec.tipo_servicio === 'DIRECTO' ? styles.badgeActive : styles.badgeInactive}>
                             {frec.tipo_servicio}
                           </span>
+                        </td>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleEliminarFrecuencia(frec.id, frec.resolucion_ant)}
+                            title="Eliminar frecuencia"
+                            style={{
+                              background: '#FEF2F2',
+                              border: '1px solid #FECACA',
+                              color: '#DC2626',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -717,15 +985,17 @@ export default function GestionCooperativas({ onLogout }) {
       {/* Modal de Nueva Cooperativa */}
       {modalNuevaCoopAbierto && (
         <ModalNuevaCooperativa
+          isOpen={true}
           onClose={() => setModalNuevaCoopAbierto(false)}
           onGuardar={handleGuardarNuevaCoop}
         />
       )}
 
-      {/* Panel Lateral de Personalización Branding */}
+      {/* Modal de Personalización Branding */}
       {modalBrandingAbierto && coopSeleccionadaBranding && (
         <PersonalizacionBranding
           cooperativa={coopSeleccionadaBranding}
+          cooperativas={cooperativas}
           onClose={() => {
             setModalBrandingAbierto(false);
             setCoopSeleccionadaBranding(null);
@@ -752,31 +1022,60 @@ export default function GestionCooperativas({ onLogout }) {
                 />
               </div>
               <div>
-                <label style={styles.formLabel}>Correo Institucional</label>
+                <label style={styles.formLabel}>Correo Electrónico</label>
                 <input
                   type="email"
                   required
-                  placeholder="gerente@cita.com"
+                  placeholder="carlos@transporteuta.com"
                   value={formUsuario.correo}
                   onChange={(e) => setFormUsuario({ ...formUsuario, correo: e.target.value })}
                   style={styles.formInput}
                 />
               </div>
               <div>
-                <label style={styles.formLabel}>Rol Asignado</label>
+                <label style={styles.formLabel}>Teléfono</label>
+                <input
+                  type="text"
+                  placeholder="0991234567"
+                  value={formUsuario.telefono}
+                  onChange={(e) => setFormUsuario({ ...formUsuario, telefono: e.target.value })}
+                  style={styles.formInput}
+                />
+              </div>
+              <div>
+                <label style={styles.formLabel}>Rol en el Sistema</label>
                 <select
                   value={formUsuario.rol}
                   onChange={(e) => setFormUsuario({ ...formUsuario, rol: e.target.value })}
                   style={styles.formInput}
                 >
-                  <option value="ADMIN_COOP">ADMIN_COOP (Gerente de Cooperativa)</option>
-                  <option value="OFICINISTA">OFICINISTA (Taquilla / Ventas)</option>
-                  <option value="SUPERADMIN">SUPERADMIN (Superintendencia)</option>
+                  <option value="ADMIN_COOP">Gerente / Administrador de Cooperativa</option>
+                  <option value="OFICINISTA">Oficinista / Taquillero</option>
+                  <option value="SUPERADMIN">SuperAdministrador General</option>
                 </select>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-                <button type="button" onClick={() => setModalUsuarioAbierto(false)} style={styles.btnSecondary}>Cancelar</button>
-                <button type="submit" style={styles.btnPrimary}>Guardar Usuario</button>
+              <div>
+                <label style={styles.formLabel}>Contraseña Temporal</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Mínimo 6 caracteres"
+                  value={formUsuario.password}
+                  onChange={(e) => setFormUsuario({ ...formUsuario, password: e.target.value })}
+                  style={styles.formInput}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalUsuarioAbierto(false)}
+                  style={{ ...styles.btnSecondary, background: '#F1F5F9' }}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" style={styles.btnPrimary}>
+                  Crear Usuario
+                </button>
               </div>
             </form>
           </div>
@@ -788,30 +1087,30 @@ export default function GestionCooperativas({ onLogout }) {
 
 const styles = {
   container: {
-    maxWidth: '1200px',
+    padding: '1.5rem',
+    maxWidth: '1280px',
     margin: '0 auto',
-    padding: '2rem 1.5rem',
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    fontFamily: 'system-ui, -apple-system, sans-serif'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '2rem',
-    flexWrap: 'wrap',
-    gap: '1rem'
+    marginBottom: '1.75rem',
+    gap: '1rem',
+    flexWrap: 'wrap'
   },
   badgeRol: {
     display: 'inline-block',
-    fontSize: '0.75rem',
-    fontWeight: '700',
-    color: '#1E40AF',
-    backgroundColor: '#EFF6FF',
-    padding: '0.25rem 0.625rem',
+    padding: '0.25rem 0.75rem',
     borderRadius: '9999px',
-    marginBottom: '0.5rem',
-    border: '1px solid #BFDBFE',
-    letterSpacing: '0.05em'
+    backgroundColor: '#FEF3C7',
+    color: '#92400E',
+    border: '1px solid #FDE68A',
+    fontWeight: '700',
+    fontSize: '0.75rem',
+    letterSpacing: '0.05em',
+    marginBottom: '0.5rem'
   },
   mainTitle: {
     fontSize: '1.75rem',
@@ -833,69 +1132,69 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.5rem',
+    padding: '0.625rem 1rem',
     backgroundColor: '#1E40AF',
     color: '#FFFFFF',
-    padding: '0.625rem 1.125rem',
+    border: 'none',
     borderRadius: '8px',
     fontWeight: '600',
     fontSize: '0.875rem',
-    border: 'none',
     cursor: 'pointer',
-    boxShadow: '0 2px 4px rgba(30, 64, 175, 0.2)'
+    transition: 'background-color 0.2s'
   },
   btnSecondary: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.5rem',
-    backgroundColor: '#F8FAFC',
+    padding: '0.625rem 0.875rem',
+    backgroundColor: '#FFFFFF',
     color: '#334155',
-    padding: '0.625rem 1rem',
+    border: '1px solid #CBD5E1',
     borderRadius: '8px',
     fontWeight: '600',
     fontSize: '0.875rem',
-    border: '1px solid #CBD5E1',
     cursor: 'pointer'
   },
   btnLogout: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.5rem',
+    padding: '0.625rem 0.875rem',
     backgroundColor: '#FEF2F2',
-    color: '#991B1B',
-    padding: '0.625rem 1rem',
+    color: '#DC2626',
+    border: '1px solid #FECACA',
     borderRadius: '8px',
     fontWeight: '600',
     fontSize: '0.875rem',
-    border: '1px solid #FECACA',
     cursor: 'pointer'
   },
   alertSuccess: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.625rem',
-    backgroundColor: '#ECFDF5',
-    border: '1px solid #A7F3D0',
+    gap: '0.75rem',
+    padding: '0.75rem 1rem',
+    backgroundColor: '#D1FAE5',
     color: '#065F46',
-    padding: '0.875rem 1.25rem',
     borderRadius: '8px',
-    marginBottom: '1.5rem',
+    marginBottom: '1.25rem',
+    fontSize: '0.875rem',
     fontWeight: '500'
   },
   kpiGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '1rem',
-    marginBottom: '2rem'
+    marginBottom: '1.75rem'
   },
   kpiCard: {
     backgroundColor: '#FFFFFF',
     border: '1px solid #E2E8F0',
     borderRadius: '12px',
-    padding: '1.25rem',
+    padding: '1rem',
     display: 'flex',
     alignItems: 'center',
     gap: '1rem',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+    boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
   },
   kpiIconWrapper: {
     width: '48px',
@@ -907,9 +1206,9 @@ const styles = {
     flexShrink: 0
   },
   kpiLabel: {
-    fontSize: '0.8125rem',
+    fontSize: '0.75rem',
+    fontWeight: '600',
     color: '#64748B',
-    fontWeight: '500',
     marginBottom: '0.25rem'
   },
   kpiValue: {
@@ -921,8 +1220,8 @@ const styles = {
     display: 'flex',
     gap: '0.5rem',
     borderBottom: '2px solid #E2E8F0',
-    marginBottom: '2rem',
-    flexWrap: 'wrap'
+    marginBottom: '1.5rem',
+    overflowX: 'auto'
   },
   tabBtn: {
     display: 'flex',
@@ -931,24 +1230,23 @@ const styles = {
     padding: '0.75rem 1.25rem',
     backgroundColor: 'transparent',
     border: 'none',
-    borderBottom: '3px solid transparent',
+    borderBottom: '2px solid transparent',
+    marginBottom: '-2px',
     color: '#64748B',
-    fontSize: '0.9375rem',
     fontWeight: '600',
+    fontSize: '0.875rem',
     cursor: 'pointer',
-    marginBottom: '-2px'
+    whiteSpace: 'nowrap'
   },
   tabBtnActive: {
     color: '#1E40AF',
-    borderBottom: '3px solid #1E40AF'
+    borderBottomColor: '#1E40AF'
   },
   sectionHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '1.5rem',
-    flexWrap: 'wrap',
-    gap: '1rem'
+    marginBottom: '1.25rem'
   },
   sectionTitle: {
     fontSize: '1.25rem',
@@ -957,7 +1255,7 @@ const styles = {
     margin: '0 0 0.25rem 0'
   },
   sectionSubtitle: {
-    fontSize: '0.875rem',
+    fontSize: '0.8125rem',
     color: '#64748B',
     margin: 0
   },
@@ -971,10 +1269,7 @@ const styles = {
     border: '1px solid #E2E8F0',
     borderRadius: '12px',
     padding: '1.25rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
   },
   coopCardHeader: {
     display: 'flex',
@@ -983,15 +1278,16 @@ const styles = {
     marginBottom: '1rem'
   },
   colorIndicator: {
-    width: '16px',
-    height: '40px',
-    borderRadius: '4px'
+    width: '12px',
+    height: '36px',
+    borderRadius: '4px',
+    flexShrink: 0
   },
   coopName: {
-    fontSize: '1.0625rem',
+    fontSize: '1rem',
     fontWeight: '700',
     color: '#0F172A',
-    margin: '0 0 0.125rem 0'
+    margin: 0
   },
   coopRuc: {
     fontSize: '0.75rem',

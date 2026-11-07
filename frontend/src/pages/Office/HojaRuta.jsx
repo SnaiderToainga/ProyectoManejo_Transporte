@@ -33,9 +33,9 @@ const HojaRuta = () => {
   }, []);
 
   // 2. Función para actualizar el estado de un viaje
-  const handleCambiarEstado = async (programacion_id, nuevoEstado) => {
+  const handleCambiarEstado = async (id, nuevoEstado) => {
     try {
-      const response = await fetch(`${API_URL}/hoja-ruta/${programacion_id}/estado`, {
+      const response = await fetch(`${API_URL}/hoja-ruta/${id}/estado`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado_viaje: nuevoEstado })
@@ -44,7 +44,7 @@ const HojaRuta = () => {
       if (response.ok) {
         // Actualizar el estado localmente sin recargar toda la página
         setViajes(viajes.map(v => 
-          v.programacion_id === programacion_id ? { ...v, estado_viaje: nuevoEstado } : v
+          (v.id === id || v.programacion_id === id) ? { ...v, estado_viaje: nuevoEstado } : v
         ));
       } else {
         const errorData = await response.json();
@@ -98,7 +98,7 @@ const HojaRuta = () => {
               {viajes.map((viaje) => (
                 <tr key={viaje.programacion_id} className="hover:bg-gray-50">
                   <td className="py-2 px-4 border-b text-sm text-gray-700 font-medium">
-                    {viaje.hora_salida}
+                    {viaje.hora_salida || viaje.hora_salida_programada}
                   </td>
                   <td className="py-2 px-4 border-b text-sm text-gray-700">
                     {viaje.origen} → {viaje.destino}
@@ -115,8 +115,8 @@ const HojaRuta = () => {
                   </td>
                   <td className="py-2 px-4 border-b text-center">
                     <select
-                      value={viaje.estado_viaje}
-                      onChange={(e) => handleCambiarEstado(viaje.programacion_id, e.target.value)}
+                      value={viaje.estado_viaje || viaje.estado}
+                      onChange={(e) => handleCambiarEstado(viaje.id || viaje.programacion_id, e.target.value)}
                       className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="PROGRAMADO">PROGRAMADO</option>

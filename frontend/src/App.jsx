@@ -15,7 +15,16 @@ export default function App() {
   const [trip, setTrip] = useState(null);
   const [category, setCategory] = useState('');
   const [seats, setSeats] = useState([]);
-  const [code, setCode] = useState('');
+  const getUrlCode = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return (params.get('codigo') || params.get('reserva') || '').trim().toUpperCase();
+    } catch {
+      return '';
+    }
+  };
+
+  const [code, setCode] = useState(getUrlCode);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef(null);
 
@@ -44,7 +53,7 @@ export default function App() {
       }
       return 'oficina';
     }
-    if (hash === '#boleto') return 'ticket';
+    if (getUrlCode() || hash === '#boleto') return 'ticket';
     return 'search';
   };
 
@@ -125,7 +134,9 @@ export default function App() {
         }
         setAuthError('');
         setPage('oficina');
-      } else if (hash === '#boleto') {
+      } else if (hash === '#boleto' || getUrlCode()) {
+        const directCode = getUrlCode();
+        if (directCode) setCode(directCode);
         setPage('ticket');
       } else {
         setPage('search');
@@ -190,23 +201,26 @@ export default function App() {
            <button
             className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
             onClick={() => {
-            if (usuario) {
-            // Si ya hay sesión, permite cerrar sesión o ir a admin
-            if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
-             localStorage.removeItem('transporte_auth');
-             setUsuario(null);
-             goLogin();
-            }
-           } else {
-           goLogin();
-           }
-             }}
-            >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-           <Shield size={15} />
-           {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : 'Cerrar Sesión') : 'Administración'}
-             </span>
-        </button>
+              if (usuario) {
+                if (page !== 'admin' && (usuario.rol === 'SUPERADMIN' || usuario.rol === 'ADMIN_COOP')) {
+                  goAdmin();
+                } else {
+                  if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
+                    localStorage.removeItem('transporte_auth');
+                    setUsuario(null);
+                    goLogin();
+                  }
+                }
+              } else {
+                goLogin();
+              }
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Shield size={15} />
+              {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : usuario.rol === 'ADMIN_COOP' ? 'Gerencia CITA' : 'Cerrar Sesión') : 'Administración'}
+            </span>
+          </button>
           </nav>
 
           <span className="header-note">
@@ -218,6 +232,7 @@ export default function App() {
       <main id="contenido" className="shell main-content">
         {page === 'admin' ? (
           <GestionCooperativas
+            usuario={usuario}
             onLogout={() => {
               setUsuario(null);
               goLogin();

@@ -1,3 +1,4 @@
+import RouteMap from '../../components/RouteMap.jsx';
 import { useEffect, useState } from 'react';
 import { ArrowRight, BusFront, CalendarDays, MapPin, Search, SlidersHorizontal } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
@@ -68,12 +69,12 @@ export default function SearchTrips({ onChoose }) {
       {error ? <div className="notice error" role="alert"><h3>No pudimos mostrar los viajes</h3><p>{error}</p><button className="button secondary" onClick={() => setQuery({ ...query })}>Reintentar</button>{!isDemo && <a className="text-link" href="?demo=1">Explorar una demostración</a>}</div>
         : loading ? <div className="empty-state">Buscando tu próximo destino…</div>
           : !trips.length ? <div className="empty-state"><BusFront size={32} /><h3>No hay viajes con estos filtros</h3><p>Prueba otra fecha, ruta u horario.</p><button className="button secondary" onClick={() => { const next = initialFilters(); next.fecha = filters.fecha; setFilters(next); setQuery(next); }}>Limpiar filtros</button></div>
-            : <div className="trip-list">{trips.map(trip => <article className="trip-card" key={trip.programacion_id}>
+            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => <article className="trip-card" key={trip.programacion_id}>
               <div className="operator"><span className="operator-icon"><BusFront size={23} /></span><div><h3>{trip.cooperativa_nombre}</h3><span className="muted">Unidad {trip.numero_disco} · {trip.capacidad} asientos</span></div></div>
               <div className="trip-route"><strong>{shortTime(trip.hora_salida_programada)}</strong><span>{trip.origen}</span><ArrowRight size={22} className="route-arrow" /><span>{trip.destino}</span></div>
               <div className="trip-tags"><span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span><span> Servicio: {trip.tipo_servicio || 'No registrado'}</span><span>{trip.capacidad} asientos</span><span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span><span>Normal / VIP</span></div>
               <div className="trip-price"><span className="muted">Tarifa base</span><strong>{money(trip.precio_base)}</strong><button className="button primary" onClick={() => onChoose(trip, query.categoria)}>Elegir asientos <ArrowRight size={16} /></button></div>
-            </article>)}</div>}
+            </article>)}</div></>}
     </section>
     <div className="how-it-works">{[['01', 'Encuentra tu viaje', 'Compara rutas y horarios.'], ['02', 'Elige tu lugar', 'Un asiento a tu medida.'], ['03', 'Lleva tu boleto', 'Consulta y descarga tu PDF.']].map(([number, title, copy]) => <div key={number}><span>{number}</span><div><h3>{title}</h3><p>{copy}</p></div></div>)}</div>
   </>;

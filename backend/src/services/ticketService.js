@@ -51,19 +51,14 @@ exports.generarPDFBoleto = async (reserva, boleto, res) => {
   doc.fontSize(12).fillColor('#B91C1C').text(`Asiento: ${boleto.numero_asiento} (${boleto.categoria})`, { bold: true });
   doc.fontSize(10).fillColor('#111827').text(`Precio: $${Number(boleto.precio).toFixed(2)}`);
 
-  // Generar QR para validación en puerta
-  const qrData = JSON.stringify({
-    reserva: reserva.codigo_reserva,
-    boleto_id: boleto.id,
-    asiento: boleto.numero_asiento,
-    cedula: boleto.cedula_pasajero
-  });
+  // Generar QR oficial para validación y consulta móvil directa
+  const frontendBase = (process.env.FRONTEND_URL || 'https://proyecto-web.online').replace(/\/$/, '');
+  const qrData = `${frontendBase}/?codigo=${encodeURIComponent(reserva.codigo_reserva)}#boleto`;
 
   const qrBuffer = await QRCode.toBuffer(qrData, { width: 110, margin: 1 });
   doc.image(qrBuffer, (doc.page.width - 110) / 2, doc.y + 10, { width: 110 });
 
-  doc.fontSize(7).fillColor('#6B7280').text('Presente este código QR al abordar el bus.', 10, doc.page.height - 25, { align: 'center' });
+  doc.fontSize(7).fillColor('#6B7280').text('Escanee este código QR para verificar el boleto en línea.', 10, doc.page.height - 25, { align: 'center' });
 
   doc.end();
 };
-

@@ -158,7 +158,12 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
 
 export default function Checkout({ trip, seats, onBack, onConsult }) {
   const [passengers, setPassengers] = useState(() =>
-    seats.map(seat => ({ asiento_id: seat.asiento_id, nombre: '', cedula: '' }))
+    seats.map(seat => ({
+      asiento_id: seat.asiento_id,
+      nombre: '',
+      cedula: '',
+      tipo_pasajero: 'NORMAL'
+    }))
   );
   const [email, setEmail] = useState('');
   const [reservation, setReservation] = useState(null);
@@ -167,7 +172,16 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
   const [conflict, setConflict] = useState(false);
   const submitting = useRef(false);
 
-  const total = seats.reduce((sum, seat) => sum + (seatPrice(seat, trip) || 0), 0);
+  // Función de cálculo con tarifa preferencial (50% de ley para Tercera Edad, Niños y Discapacidad)
+  const getPassengerPrice = (seat, tipo) => {
+    const base = seatPrice(seat, trip) || 0;
+    if (tipo && tipo !== 'NORMAL') {
+      return Number((base * 0.5).toFixed(2));
+    }
+    return base;
+  };
+
+  const total = seats.reduce((sum, seat, i) => sum + getPassengerPrice(seat, passengers[i]?.tipo_pasajero), 0);
 
   const updatePassenger = (index, key, value) => {
     setPassengers(previous =>
@@ -201,17 +215,29 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
     setBusy(true);
     setError('');
 
+    const etiquetaTipo = {
+      TERCERA_EDAD: 'Tercera Edad',
+      NIÑO: 'Menor',
+      DISCAPACIDAD: 'Discapacidad'
+    };
+
     try {
       const result = await api.reserve({
         programacion_id: trip.programacion_id,
         email: email.trim(),
         asientos: seats.map(seat => seat.asiento_id),
-        pasajeros: passengers.map((passenger, i) => ({
-          ...passenger,
-          nombre: passenger.nombre.trim(),
-          cedula: passenger.cedula.trim(),
-          precio: seatPrice(seats[i], trip)
-        }))
+        pasajeros: passengers.map((passenger, i) => {
+          const tipo = passenger.tipo_pasajero || 'NORMAL';
+          const nombreFinal = tipo !== 'NORMAL' && etiquetaTipo[tipo]
+            ? `${passenger.nombre.trim()} (${etiquetaTipo[tipo]})`
+            : passenger.nombre.trim();
+          return {
+            ...passenger,
+            nombre: nombreFinal,
+            cedula: passenger.cedula.trim(),
+            precio: getPassengerPrice(seats[i], tipo)
+          };
+        })
       });
 
       if (!result.reserva?.codigo_reserva) {
@@ -251,22 +277,27 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
       </div>
 
       <div className="flow-layout">
-        <div className="panel">
+        <div className="panel checkout-panel">
           {reservation ? (
-            <PaymentPanel reservation={reservation} onUpdate={setReservation} onDone={onConsult} />
+            <PaymentPanel
+              key={reservation.codigo_reserva}
+              reservation={reservation}
+              onUpdate={setReservation}
+              onDone={onConsult}
+            />
           ) : (
-            <form onSubmit={reserve}>
-              {/* Sección de correo para notificaciones */}
-              <fieldset className="passenger-fields">
+            <form onSubmit={reserve} className="checkout-form">
+              {/* Correo de contacto principal */}
+              <fieldset className="passenger-fields" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #1e3a8a' }}>
                 <legend>
-                  <Mail size={15} className="inline-icon" /> Datos de Contacto y Envío
+                  <Mail size={16} className="inline-icon" /> Correo de notificación
                 </legend>
                 <label>
-                  Correo Electrónico (para recibir tus boletos y código QR)
+                  Correo electrónico para recibir los boletos con QR
                   <input
                     type="email"
-                    autoComplete="email"
                     required
+                    autoComplete="email"
                     value={email}
                     onChange={event => setEmail(event.target.value)}
                     disabled={busy}
@@ -313,11 +344,26 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
                       placeholder="10 dígitos"
                     />
                   </label>
+                  <label>
+                    Tipo de Tarifa / Descuento legal
+                    <select
+                      name={`tipo-${i}`}
+                      value={passenger.tipo_pasajero || 'NORMAL'}
+                      onChange={event => updatePassenger(i, 'tipo_pasajero', event.target.value)}
+                      disabled={busy}
+                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', background: '#ffffff' }}
+                    >
+                      <option value="NORMAL">Tarifa Regular (100%)</option>
+                      <option value="TERCERA_EDAD">Tercera Edad (50% desc. Ley)</option>
+                      <option value="NIÑO">Niño / Menor de edad (50% desc.)</option>
+                      <option value="DISCAPACIDAD">Persona con Discapacidad (50% desc.)</option>
+                    </select>
+                  </label>
                 </fieldset>
               ))}
 
               <p className="small-copy">
-                <LockKeyhole size={13} className="inline-icon" /> Tus datos se utilizan para emitir los boletos de esta reserva.
+                <LockKeyhole size={13} className="inline-icon" /> Descuentos del 50% aplicados conforme a la normativa ecuatoriana de transporte. Se valida con la cédula al abordar.
               </p>
 
               {error && <p role="alert" className="inline-error">{error}</p>}
@@ -349,21 +395,30 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
           </p>
           <hr />
           <ul className="selected-seats">
-            {seats.map(seat => (
-              <li key={seat.asiento_id}>
-                <span>
-                  Asiento {seat.numero_asiento} · {seatCategory(seat)}
-                </span>
-                <strong>{money(seatPrice(seat, trip))}</strong>
-              </li>
-            ))}
+            {seats.map((seat, i) => {
+              const pPrice = getPassengerPrice(seat, passengers[i]?.tipo_pasajero);
+              const isDiscount = passengers[i]?.tipo_pasajero && passengers[i]?.tipo_pasajero !== 'NORMAL';
+              return (
+                <li key={seat.asiento_id}>
+                  <span>
+                    Asiento {seat.numero_asiento} · {seatCategory(seat)}
+                    {isDiscount && (
+                      <span className="pill text-xs ml-1" style={{ backgroundColor: '#dcfce7', color: '#166534', fontWeight: 'bold' }}>
+                        -50%
+                      </span>
+                    )}
+                  </span>
+                  <strong>{money(pPrice)}</strong>
+                </li>
+              );
+            })}
           </ul>
           <div className="total-row">
-            <span>{reservation ? 'Total de la reserva' : 'Total base'}</span>
+            <span>{reservation ? 'Total de la reserva' : 'Total a pagar'}</span>
             <strong>{money(reservation?.total ?? total)}</strong>
           </div>
           <p className="small-copy">
-            Si necesitas una tarifa preferencial que no aparece en línea, consúltala en taquilla antes de reservar.
+            Tarifas preferenciales del 50% aplicadas de forma directa. Se requerirá documento habilitante al abordar.
           </p>
           {reservation && (
             <button className="button secondary full-width" onClick={() => onConsult(reservation.codigo_reserva)}>
