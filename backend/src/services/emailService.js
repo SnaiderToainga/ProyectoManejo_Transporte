@@ -5,28 +5,21 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Genera el código QR en formato DataURL (Base64) con la información del boleto
+ * Genera el código QR con el enlace directo para visualización móvil nativa
  */
 async function generarCodigoQR(datosBoleto) {
   try {
-    const payload = JSON.stringify({
-      reservaId: datosBoleto.reservaId,
-      cooperativa: datosBoleto.cooperativa,
-      origen: datosBoleto.origen,
-      destino: datosBoleto.destino,
-      fecha: datosBoleto.fecha,
-      hora: datosBoleto.hora,
-      asientos: datosBoleto.asientos
-    });
+    const frontendBase = (process.env.FRONTEND_URL || 'https://proyecto-web.online').replace(/\/$/, '');
+    const enlaceBoleto = `${frontendBase}/?codigo=${encodeURIComponent(datosBoleto.reservaId)}#boleto`;
 
-    const qrDataUrl = await QRCode.toDataURL(payload, {
+    const qrDataUrl = await QRCode.toDataURL(enlaceBoleto, {
       errorCorrectionLevel: 'H',
       margin: 1,
       color: { dark: '#1e3a8a', light: '#ffffff' },
       width: 250
     });
 
-    return qrDataUrl;
+    return { qrDataUrl, enlaceBoleto };
   } catch (error) {
     console.error('Error generando código QR:', error);
     throw error;
@@ -48,8 +41,10 @@ function guardarBoletoLocal(htmlContent) {
 /**
  * Genera la plantilla HTML adaptable del boleto
  */
-function generarPlantillaBoleto(datos, qrSrc) {
+function generarPlantillaBoleto(datos, qrSrc, enlaceBoleto) {
   const { cooperativa, origen, destino, fecha, hora, asientos, total, reservaId } = datos;
+  const linkWeb = enlaceBoleto || `https://proyecto-web.online/?codigo=${encodeURIComponent(reservaId)}#boleto`;
+
   return `
     <!DOCTYPE html>
     <html>
@@ -88,9 +83,16 @@ function generarPlantillaBoleto(datos, qrSrc) {
           </table>
 
           <div style="text-align: center; padding: 16px; background-color: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
-            <p style="margin: 0 0 10px; font-weight: bold; color: #1e293b; font-size: 13px;">Presenta este código QR al momento de abordar:</p>
-            <img src="${qrSrc}" alt="Código QR del Boleto" style="width: 200px; height: 200px; border-radius: 8px; border: 3px solid #1e3a8a; display: inline-block;" />
-            <p style="margin: 8px 0 0; color: #94a3b8; font-size: 11px;">Válido únicamente para la fecha y hora indicadas</p>
+            <p style="margin: 0 0 10px; font-weight: bold; color: #1e293b; font-size: 13px;">Presenta este código QR o pulsa el enlace para ver tu boleto oficial:</p>
+            <a href="${linkWeb}" target="_blank" style="text-decoration: none; display: inline-block;">
+              <img src="${qrSrc}" alt="Código QR del Boleto" style="width: 200px; height: 200px; border-radius: 8px; border: 3px solid #1e3a8a; display: inline-block;" />
+            </a>
+            <div style="margin-top: 14px;">
+              <a href="${linkWeb}" target="_blank" style="display: inline-block; background-color: #1e3a8a; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 14px; padding: 10px 22px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                Ver Boleto Digital en Línea
+              </a>
+            </div>
+            <p style="margin: 10px 0 0; color: #94a3b8; font-size: 11px;">Al escanear con la cámara de tu celular se abrirá directamente tu boleto validado.</p>
           </div>
         </div>
 
@@ -110,7 +112,7 @@ async function enviarBoletoEmail(datos) {
   const { emailDestinatario, cooperativa, origen, destino, fecha, hora, asientos, total, reservaId } = datos;
 
   try {
-    const qrDataUrl = await generarCodigoQR({
+    const { qrDataUrl, enlaceBoleto } = await generarCodigoQR({
       reservaId,
       cooperativa,
       origen,
@@ -139,7 +141,7 @@ async function enviarBoletoEmail(datos) {
           from: `"En ruta - Transporte UTA" <${process.env.SMTP_USER}>`,
           to: emailDestinatario,
           subject: `🎫 Boleto Confirmado: ${origen} a ${destino} - ${cooperativa}`,
-          html: generarPlantillaBoleto(datos, 'cid:codigo_qr_boleto'),
+          html: generarPlantillaBoleto(datos, 'cid:codigo_qr_boleto', enlaceBoleto),
           attachments: [
             {
               filename: 'boleto-qr.png',
@@ -150,18 +152,18 @@ async function enviarBoletoEmail(datos) {
         });
 
         console.log(`📨 [GMAIL ENVIADO] Boleto despachado con CID a: ${emailDestinatario} (ID: ${info.messageId})`);
-        return { exito: true, enviadoReal: true, messageId: info.messageId, qrDataUrl };
+        return { exito: true, enviadoReal: true, messageId: info.messageId, qrDataUrl, enlaceBoleto };
       } catch (smtpErr) {
         console.warn(`⚠️ Error en despacho Gmail (${smtpErr.message}). Generando copia local...`);
       }
     }
 
     // Respaldo en archivo HTML local con Base64 para visualización en navegador
-    const local = guardarBoletoLocal(generarPlantillaBoleto(datos, qrDataUrl));
+    const local = guardarBoletoLocal(generarPlantillaBoleto(datos, qrDataUrl, enlaceBoleto));
     console.log(`✅ [NOTIFICACIÓN LOCAL] Boleto procesado para: ${emailDestinatario || 'pasajero@correo.com'}`);
     console.log(`📄 [BOLETO CON QR GENERADO]: ${local.filePath}`);
 
-    return { exito: true, enviadoReal: false, filePath: local.filePath, qrDataUrl };
+    return { exito: true, enviadoReal: false, filePath: local.filePath, qrDataUrl, enlaceBoleto };
   } catch (error) {
     console.error('Error al procesar boleto:', error);
     return { exito: false, error: error.message };
