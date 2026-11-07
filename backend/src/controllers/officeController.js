@@ -151,7 +151,7 @@ exports.validarComprobante = async (req, res) => {
 
           if (viajeQuery.rows.length > 0) {
             const v = viajeQuery.rows[0];
-            const emailDestino = v.email || 'pasajero@correo.com';
+            const emailDestino = v.email || v.correo || 'pasajero@correo.com';
             const asientosArray = Array.isArray(v.boletos) && v.boletos.length > 0 
               ? v.boletos.map(b => `Asiento ${b.numero_asiento}`) 
               : ['Asiento asignado'];
