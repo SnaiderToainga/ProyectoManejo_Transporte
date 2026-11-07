@@ -591,11 +591,19 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                     <button
                       onClick={() => handleEliminarCoop(coop.id, coop.nombre)}
                       style={{
-                        ...styles.btnBranding,
-                        flex: '0 0 auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '38px',
+                        height: '38px',
+                        minWidth: '38px',
                         backgroundColor: '#FEF2F2',
-                        borderColor: '#FECACA',
-                        color: '#DC2626'
+                        border: '1px solid #FECACA',
+                        borderRadius: '6px',
+                        color: '#DC2626',
+                        cursor: 'pointer',
+                        padding: 0,
+                        flexShrink: 0
                       }}
                       title="Eliminar cooperativa"
                     >
