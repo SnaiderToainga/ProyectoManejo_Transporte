@@ -40,9 +40,9 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   })();
 
   const userRole = (authUser?.rol || '').toUpperCase();
-  const isGerente = userRole === 'ADMIN_COOP' || (authUser?.correo && authUser.correo.toLowerCase().includes('gerente'));
-  const coopId = authUser?.cooperativa_id || (isGerente ? 1 : null);
-  const coopAsignadaNombre = authUser?.cooperativa_nombre || (isGerente ? 'Cooperativa de Transportes CITA' : '');
+  const isGerente = userRole === 'ADMIN_COOP';
+  const coopId = authUser?.cooperativa_id || null;
+  const coopAsignadaNombre = authUser?.cooperativa_nombre || 'Sin cooperativa asignada';
 
   const [tabActiva, setTabActiva] = useState(isGerente ? 'buses' : 'cooperativas');
   const [cooperativas, setCooperativas] = useState(mockCooperativas);
@@ -86,6 +86,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     correo: '',
     telefono: '',
     rol: 'ADMIN_COOP',
+    cooperativa_id: 1,
     password: ''
   });
 
@@ -130,15 +131,15 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
   // Filtrado según Rol (Gerente sólo gestiona su Cooperativa asignada)
   const cooperativasVisibles = isGerente
-    ? cooperativas.filter(c => c.id === Number(coopId) || c.nombre.toLowerCase().includes('cita'))
+    ? cooperativas.filter(c => Number(c.id) === Number(coopId))
     : cooperativas;
 
   const busesVisibles = isGerente
-    ? buses.filter(b => b.cooperativa_id === Number(coopId) || (b.cooperativa_nombre && b.cooperativa_nombre.toLowerCase().includes('cita')))
+    ? buses.filter(b => Number(b.cooperativa_id) === Number(coopId))
     : buses;
 
   const frecuenciasVisibles = isGerente
-    ? frecuencias.filter(f => f.cooperativa_id === Number(coopId) || (f.cooperativa_nombre && f.cooperativa_nombre.toLowerCase().includes('cita')))
+    ? frecuencias.filter(f => Number(f.cooperativa_id) === Number(coopId))
     : frecuencias;
 
   // Recalcular métricas
@@ -216,7 +217,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     e.preventDefault();
     if (!formBus.numero_disco || !formBus.placa) return;
 
-    const coopTargetId = isGerente ? (coopId || 1) : Number(formBus.cooperativa_id);
+    if (isGerente && !coopId) return mostrarAlerta('Vuelve a iniciar sesión con una cooperativa asignada.');
+    const coopTargetId = isGerente ? Number(coopId) : Number(formBus.cooperativa_id);
 
     try {
       const resp = await fetch(`${API_URL}/admin/buses`, {
@@ -301,7 +303,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     e.preventDefault();
     if (!formFrecuencia.resolucion_ant || !formFrecuencia.destino) return;
 
-    const coopTargetId = isGerente ? (coopId || 1) : Number(formFrecuencia.cooperativa_id);
+    if (isGerente && !coopId) return mostrarAlerta('Vuelve a iniciar sesión con una cooperativa asignada.');
+    const coopTargetId = isGerente ? Number(coopId) : Number(formFrecuencia.cooperativa_id);
 
     try {
       const resp = await fetch(`${API_URL}/admin/frecuencias`, {
@@ -364,17 +367,20 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   const handleGuardarUsuario = async (e) => {
     e.preventDefault();
     try {
-      await fetch(`${API_URL}/admin/usuarios`, {
+      const response = await fetch(`${API_URL}/admin/usuarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formUsuario)
       });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.usuario) {
+        throw new Error(data?.error || 'No se pudo crear el usuario.');
+      }
       mostrarAlerta(`Usuario ${formUsuario.nombre} creado con rol ${formUsuario.rol}.`);
       setModalUsuarioAbierto(false);
-      setFormUsuario({ nombre: '', correo: '', telefono: '', rol: 'ADMIN_COOP', password: '' });
-    } catch {
-      mostrarAlerta(`Usuario ${formUsuario.nombre} simulado.`);
-      setModalUsuarioAbierto(false);
+      setFormUsuario({ nombre: '', correo: '', telefono: '', rol: 'ADMIN_COOP', cooperativa_id: 1, password: '' });
+    } catch (error) {
+      mostrarAlerta(error.message);
     }
   };
 
@@ -1054,11 +1060,26 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   <option value="SUPERADMIN">SuperAdministrador General</option>
                 </select>
               </div>
+              {formUsuario.rol === 'ADMIN_COOP' && (
+                <label style={styles.formLabel}>Cooperativa asignada
+                  <select
+                    required
+                    value={cooperativas.some(c => Number(c.id) === formUsuario.cooperativa_id) ? formUsuario.cooperativa_id : ''}
+                    onChange={e => setFormUsuario({ ...formUsuario, cooperativa_id: Number(e.target.value) })}
+                    style={styles.formInput}
+                  >
+                    <option value="">Selecciona una cooperativa</option>
+                    {cooperativas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </label>
+              )}
               <div>
                 <label style={styles.formLabel}>Contraseña Temporal</label>
                 <input
                   type="password"
                   required
+                  minLength={6}
+                  maxLength={128}
                   placeholder="Mínimo 6 caracteres"
                   value={formUsuario.password}
                   onChange={(e) => setFormUsuario({ ...formUsuario, password: e.target.value })}

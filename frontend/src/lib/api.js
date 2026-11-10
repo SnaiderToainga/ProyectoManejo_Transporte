@@ -30,6 +30,9 @@ async function call(name, args, live) {
 }
 
 export const api = {
+  requestHistoryLink: email => request('/mis-compras/acceso', { method: 'POST', body: JSON.stringify({ email }) }),
+  purchaseHistory: (token, signal) => request('/mis-compras', { signal, headers: { Authorization: `Bearer ${token}` } }),
+  ticketQr: (code, id) => `${baseUrl}/reservas/${encodeURIComponent(code)}/boletos/${encodeURIComponent(id)}/qr`,
   trips: (date, signal) => call('trips', [date], () => request(`/viajes?fecha=${encodeURIComponent(date)}`, { signal })),
   cooperatives: (signal) => call('cooperatives', [], () => request('/cooperativas', { signal })),
   seats: (id, signal) => call('seats', [id], () => request(`/viajes/${encodeURIComponent(id)}/asientos`, { signal })),

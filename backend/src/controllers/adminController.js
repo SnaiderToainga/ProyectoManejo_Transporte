@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { hashPassword, verifyPassword } = require('../services/passwords');
 
 // ==========================================
 // 1. AUTENTICACIÓN Y ROLES
@@ -7,46 +8,25 @@ const db = require('../config/db');
 exports.login = async (req, res) => {
   const { correo, password } = req.body;
 
-  if (!correo || !password) {
+  if (typeof correo !== 'string' || !correo.trim() || typeof password !== 'string' || !password || password.length > 128) {
     return res.status(400).json({ error: 'Correo y contraseña requeridos' });
   }
 
   try {
     const result = await db.query(
-      'SELECT id, nombre, correo, telefono, rol, password_hash FROM usuarios WHERE correo = $1',
+      `SELECT u.id, u.nombre, u.correo, u.telefono, u.rol, u.password_hash,
+              c.id AS cooperativa_id, c.nombre AS cooperativa_nombre
+       FROM usuarios u LEFT JOIN cooperativas c ON c.id = u.cooperativa_id
+       WHERE LOWER(TRIM(u.correo)) = $1`,
       [correo.trim().toLowerCase()]
     );
 
-    if (result.rows.length === 0) {
-      if (correo.trim().toLowerCase() === 'gerente@cita.com' && (password === 'admin123' || password === 'hash_admin_123')) {
-        return res.json({
-          mensaje: 'Inicio de sesión exitoso',
-          usuario: {
-            id: 99,
-            nombre: 'Gerente Cooperativa CITA',
-            correo: 'gerente@cita.com',
-            rol: 'ADMIN_COOP',
-            cooperativa_id: 1,
-            cooperativa_nombre: 'Cooperativa de Transportes CITA',
-            telefono: '0981122334'
-          },
-          redirect: '/admin'
-        });
-      }
+    const usuario = result.rows[0];
+    if (!usuario || !await verifyPassword(password, usuario.password_hash)) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
-
-    const usuario = result.rows[0];
-
-    // Validación flexible para contraseñas de seeds y creadas dinámicamente
-    const passwordMatch =
-      usuario.password_hash === password ||
-      usuario.password_hash === `hash_${password}` ||
-      usuario.password_hash === `hash_admin_123` ||
-      usuario.password_hash === `hash_oficina_123`;
-
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (usuario.rol === 'ADMIN_COOP' && !usuario.cooperativa_id) {
+      return res.status(403).json({ error: 'Tu cuenta aún no tiene una cooperativa asignada' });
     }
 
     const redirectPath = usuario.rol === 'OFICINISTA' ? '/oficina' : '/admin';
@@ -58,7 +38,9 @@ exports.login = async (req, res) => {
         nombre: usuario.nombre,
         correo: usuario.correo,
         rol: usuario.rol,
-        telefono: usuario.telefono
+        telefono: usuario.telefono,
+        cooperativa_id: usuario.cooperativa_id,
+        cooperativa_nombre: usuario.cooperativa_nombre
       },
       redirect: redirectPath
     });
@@ -104,6 +86,10 @@ exports.crearCooperativa = async (req, res) => {
   if (!nombre || !ruc) {
     return res.status(400).json({ error: 'Nombre y RUC de la cooperativa son obligatorios' });
   }
+  if (gerente?.correo && gerente?.nombre
+      && (typeof gerente.password !== 'string' || gerente.password.length < 6 || gerente.password.length > 128)) {
+    return res.status(400).json({ error: 'La contraseña del gerente debe tener entre 6 y 128 caracteres' });
+  }
 
   const client = await db.pool.connect();
 
@@ -129,17 +115,18 @@ exports.crearCooperativa = async (req, res) => {
     // Si se envían datos del Gerente, crearlo en la misma transacción
     let usuarioGerente = null;
     if (gerente && gerente.correo && gerente.nombre) {
-      const passHash = gerente.password ? `hash_${gerente.password}` : 'hash_gerente_123';
+      const passHash = await hashPassword(gerente.password);
       const insertUser = `
-        INSERT INTO usuarios (nombre, correo, telefono, rol, password_hash)
-        VALUES ($1, $2, $3, 'ADMIN_COOP', $4)
-        RETURNING id, nombre, correo, rol
+        INSERT INTO usuarios (nombre, correo, telefono, rol, password_hash, cooperativa_id)
+        VALUES ($1, $2, $3, 'ADMIN_COOP', $4, $5)
+        RETURNING id, nombre, correo, rol, cooperativa_id
       `;
       const userRes = await client.query(insertUser, [
         gerente.nombre.trim(),
         gerente.correo.trim().toLowerCase(),
         gerente.telefono || '',
-        passHash
+        passHash,
+        nuevaCoop.id
       ]);
       usuarioGerente = userRes.rows[0];
     }
@@ -214,9 +201,9 @@ exports.getUsuarios = async (req, res) => {
 };
 
 exports.crearUsuario = async (req, res) => {
-  const { nombre, correo, telefono, rol, password } = req.body;
+  const { nombre, correo, telefono, rol, password, cooperativa_id } = req.body;
 
-  if (!nombre || !correo || !rol) {
+  if (typeof nombre !== 'string' || !nombre.trim() || typeof correo !== 'string' || !correo.trim() || !rol) {
     return res.status(400).json({ error: 'Nombre, correo y rol son obligatorios' });
   }
 
@@ -225,19 +212,27 @@ exports.crearUsuario = async (req, res) => {
     return res.status(400).json({ error: 'Rol no permitido para gestión administrativa' });
   }
 
+  if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
+    return res.status(400).json({ error: 'La contraseña debe tener entre 6 y 128 caracteres' });
+  }
+  const coopId = rol === 'ADMIN_COOP' ? Number(cooperativa_id) : null;
+  if (rol === 'ADMIN_COOP' && (!Number.isInteger(coopId) || coopId < 1 || coopId > 2147483647)) {
+    return res.status(400).json({ error: 'Selecciona una cooperativa válida' });
+  }
   try {
-    const passHash = password ? `hash_${password}` : `hash_${rol.toLowerCase()}_123`;
+    const passHash = await hashPassword(password);
     const query = `
-      INSERT INTO usuarios (nombre, correo, telefono, rol, password_hash)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, nombre, correo, telefono, rol, creado_en
+      INSERT INTO usuarios (nombre, correo, telefono, rol, password_hash, cooperativa_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, nombre, correo, telefono, rol, creado_en, cooperativa_id
     `;
     const result = await db.query(query, [
       nombre.trim(),
       correo.trim().toLowerCase(),
       telefono || '',
       rol,
-      passHash
+      passHash,
+      coopId
     ]);
 
     res.status(201).json({
@@ -245,6 +240,8 @@ exports.crearUsuario = async (req, res) => {
       usuario: result.rows[0]
     });
   } catch (error) {
+    if (error.code === '23503') return res.status(400).json({ error: 'La cooperativa seleccionada no existe' });
+    if (error.code === '23505') return res.status(409).json({ error: 'El correo ya está registrado' });
     res.status(500).json({ error: error.message });
   }
 };

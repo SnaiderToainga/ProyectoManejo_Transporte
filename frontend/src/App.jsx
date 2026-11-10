@@ -4,12 +4,18 @@ import SearchTrips from './pages/Client/SearchTrips.jsx';
 import SeatSelection from './pages/Client/SeatSelection.jsx';
 import Checkout from './pages/Client/Checkout.jsx';
 import TicketLookup from './pages/Client/TicketLookup.jsx';
+import HistorialCompras from './pages/Client/HistorialCompras.jsx';
 import Login from './pages/Admin/Login.jsx';
 import GestionCooperativas from './pages/Admin/GestionCooperativas.jsx';
 import OfficeDashboard from './pages/Office/OfficeDashboard';
 import { recalledCode } from './lib/reservation.js';
 import { isDemo } from './lib/api.js';
 import { canAccessOffice } from './lib/authGuard.js';
+
+const isHistoryHash = hash => hash === '#mis-compras' || hash.startsWith('#mis-compras?');
+const historyTokenFromHash = () => isHistoryHash(window.location.hash)
+  ? new URLSearchParams(window.location.hash.split('?')[1]).get('token') || ''
+  : '';
 
 export default function App() {
   const [trip, setTrip] = useState(null);
@@ -25,6 +31,7 @@ export default function App() {
   };
 
   const [code, setCode] = useState(getUrlCode);
+  const [historyToken, setHistoryToken] = useState(historyTokenFromHash);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef(null);
 
@@ -39,6 +46,7 @@ export default function App() {
   const getInitialPage = () => {
     const path = window.location.pathname;
     const hash = window.location.hash;
+    if (isHistoryHash(hash)) return 'mis-compras';
     let auth = null;
     try {
       auth = JSON.parse(localStorage.getItem('transporte_auth'));
@@ -68,6 +76,18 @@ export default function App() {
   });
   const [authError, setAuthError] = useState('');
   const [page, setPage] = useState(getInitialPage);
+
+  useEffect(() => {
+    if (historyToken && historyTokenFromHash()) {
+      window.history.replaceState(null, '', '#mis-compras');
+    }
+  }, [historyToken]);
+
+  const goHistory = () => {
+    setPage('mis-compras');
+    window.location.hash = 'mis-compras';
+    window.scrollTo(0, 0);
+  };
 
   const goSearch = () => {
     setMenuOpen(false);
@@ -114,7 +134,14 @@ export default function App() {
     const change = () => {
       setMenuOpen(false);
       const hash = window.location.hash;
-      if (hash === '#admin') {
+      if (isHistoryHash(hash)) {
+        const token = historyTokenFromHash();
+        if (token) {
+          setHistoryToken(token);
+          window.history.replaceState(null, '', '#mis-compras');
+        }
+        setPage('mis-compras');
+      } else if (hash === '#admin') {
         setPage('admin');
       } else if (hash === '#login') {
         setPage('login');
@@ -193,6 +220,9 @@ export default function App() {
             <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
               Mi boleto
             </button>
+            <button className={`nav-link ${page === 'mis-compras' ? 'active' : ''}`} onClick={goHistory}>
+              Mis compras
+            </button>
             {usuario && (usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
               <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
                 Taquilla / Oficina
@@ -218,7 +248,7 @@ export default function App() {
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
               <Shield size={15} />
-              {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : usuario.rol === 'ADMIN_COOP' ? 'Gerencia CITA' : 'Cerrar Sesión') : 'Administración'}
+              {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : usuario.rol === 'ADMIN_COOP' ? 'Gerencia' : 'Cerrar Sesión') : 'Administración'}
             </span>
           </button>
           </nav>
@@ -266,6 +296,8 @@ export default function App() {
               }}
             />
           )
+        ) : page === 'mis-compras' ? (
+          <HistorialCompras token={historyToken} onClearAccess={() => setHistoryToken('')} onVerBoleto={goTicket} />
         ) : page === 'ticket' ? (
           <TicketLookup key={code} initialCode={code} onBack={goSearch} />
         ) : trip && seats.length ? (
