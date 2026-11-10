@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { occupiedReservation } = require('../services/seatInventory');
 
 // Obtener todas las cooperativas
 exports.getCooperativas = async (req, res) => {
@@ -94,7 +95,7 @@ exports.getAsientosPorViaje = async (req, res) => {
                 JOIN reservas r ON r.id = db.reserva_id
                 WHERE db.asiento_id = a.id
                   AND r.programacion_id = pv.id
-                  AND r.estado IN ('PAGADO', 'PENDIENTE')
+                  AND ${occupiedReservation}
               )
               THEN 'OCUPADO'
               ELSE 'DISPONIBLE'

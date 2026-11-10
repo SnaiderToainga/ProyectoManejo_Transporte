@@ -1,5 +1,6 @@
 // backend/src/controllers/officeController.js
 const { enviarBoletoEmail } = require('../services/emailService');
+const { lockTrip, occupiedReservation, occupiedSeats, seatIds, tripSeats } = require('../services/seatInventory');
 const db = require('../config/db');
 const pool = db.pool || db;
 const crypto = require('crypto');
@@ -80,18 +81,40 @@ exports.validarComprobante = async (req, res) => {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
-
-    const updateRes = await client.query(
-      `UPDATE reservas SET estado = $1, expira_en = NULL WHERE id = $2 RETURNING *`,
-      [nuevoEstado, id]
-    );
-
-    if (updateRes.rowCount === 0) {
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const lookup = await client.query('SELECT programacion_id FROM reservas WHERE id = $1', [id]);
+    const trip = lookup.rowCount && await lockTrip(client, lookup.rows[0].programacion_id);
+    if (!trip) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
 
+    if (aprobar) {
+      const details = await client.query('SELECT asiento_id FROM detalle_boletos WHERE reserva_id = $1', [id]);
+      const ids = seatIds(details.rows.map(row => row.asiento_id));
+      if (!ids || (await tripSeats(client, trip, ids)).size !== ids.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'La reserva no tiene asientos válidos para este viaje' });
+      }
+      const occupied = await occupiedSeats(client, trip.id, ids, id);
+      if (occupied.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'Uno o más asientos seleccionados ya no están disponibles',
+          asientos_ocupados: occupied
+        });
+      }
+    }
+
+    const updateRes = await client.query(
+      `UPDATE reservas SET estado = $1, expira_en = NULL
+       WHERE id = $2 AND estado = 'PENDIENTE' RETURNING *`,
+      [nuevoEstado, id]
+    );
+    if (updateRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'La reserva ya no está pendiente' });
+    }
     const reserva = updateRes.rows[0];
 
     // Si se aprueba, generar códigos QR para cada boleto de la reserva
@@ -197,13 +220,28 @@ exports.crearVentaVentanilla = async (req, res) => {
   const progId = programacion_id || viaje_id;
   const emailContacto = email || correo;
 
-  if (!progId || !Array.isArray(pasajeros) || pasajeros.length === 0) {
+  const ids = Array.isArray(pasajeros) && seatIds(pasajeros.map(p => p?.asiento_id));
+  if (!progId || !ids) {
     return res.status(400).json({ error: 'Datos de viaje y pasajeros son obligatorios' });
   }
 
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const trip = await lockTrip(client, progId);
+    const seats = trip && await tripSeats(client, trip, ids);
+    if (!seats || seats.size !== ids.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Los asientos seleccionados no pertenecen al viaje' });
+    }
+    const occupied = await occupiedSeats(client, trip.id, ids);
+    if (occupied.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Uno o más asientos seleccionados ya no están disponibles',
+        asientos_ocupados: occupied
+      });
+    }
 
     // Asociar usuario si se proporciona correo
     let usuarioId = null;
@@ -275,7 +313,7 @@ exports.crearVentaVentanilla = async (req, res) => {
               destino: tr.destino,
               fecha: new Date(tr.fecha_viaje).toISOString().split('T')[0],
               hora: tr.hora_salida_programada,
-              asientos: pasajeros.map((_, i) => `Asiento ${i + 1}`),
+              asientos: ids.map(id => `Asiento ${seats.get(id)}`),
               total,
               reservaId: codigoReserva
             });
@@ -326,7 +364,7 @@ exports.getHojaRutaHoy = async (req, res) => {
           SELECT COUNT(*)
           FROM detalle_boletos db
           JOIN reservas r ON db.reserva_id = r.id
-          WHERE r.programacion_id = pv.id AND r.estado IN ('PAGADO', 'PENDIENTE')
+          WHERE r.programacion_id = pv.id AND ${occupiedReservation}
         )::int AS asientos_ocupados
       FROM programacion_viajes pv
       JOIN frecuencias f ON pv.frecuencia_id = f.id

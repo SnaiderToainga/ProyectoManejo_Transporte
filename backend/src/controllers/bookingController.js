@@ -1,5 +1,6 @@
 // backend/src/controllers/bookingController.js
 const ticketService = require('../services/ticketService');
+const { lockTrip, occupiedSeats, seatIds, tripSeats } = require('../services/seatInventory');
 const db = require('../config/db');
 const pool = db.pool || db;
 
@@ -8,14 +9,30 @@ exports.crearReserva = async (req, res) => {
   const { programacion_id, usuario_id, asientos, pasajeros, email, correo } = req.body;
   const emailContacto = email || correo;
 
-  if (!programacion_id || !asientos || asientos.length === 0) {
+  const ids = seatIds(asientos);
+  const passengerIds = Array.isArray(pasajeros) && seatIds(pasajeros.map(p => p?.asiento_id));
+  if (!programacion_id || !ids || !passengerIds || ids.length !== passengerIds.length
+      || passengerIds.some(id => !ids.includes(id))) {
     return res.status(400).json({ error: 'Faltan datos obligatorios para la reserva' });
   }
 
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN'); // Inicia transacción atómica
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const trip = await lockTrip(client, programacion_id);
+    if (!trip || (await tripSeats(client, trip, ids)).size !== ids.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Los asientos seleccionados no pertenecen al viaje' });
+    }
+    const occupied = await occupiedSeats(client, trip.id, ids);
+    if (occupied.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Uno o más asientos seleccionados ya no están disponibles',
+        asientos_ocupados: occupied
+      });
+    }
 
     // Asociar usuario automáticamente si envía correo en Checkout
     let finalUsuarioId = usuario_id || null;
@@ -42,26 +59,8 @@ exports.crearReserva = async (req, res) => {
     await client.query(`
       UPDATE reservas 
       SET estado = 'CANCELADO' 
-      WHERE estado = 'PENDIENTE' AND expira_en < CURRENT_TIMESTAMP
-    `);
-
-    // Validar si algún asiento solicitado ya está ocupado o reservado activo
-    const checkAsientos = await client.query(`
-      SELECT db.asiento_id 
-      FROM detalle_boletos db
-      JOIN reservas r ON r.id = db.reserva_id
-      WHERE r.programacion_id = $1 
-        AND db.asiento_id = ANY($2::int[])
-        AND (r.estado = 'PAGADO' OR (r.estado = 'PENDIENTE' AND r.expira_en > CURRENT_TIMESTAMP))
-    `, [programacion_id, asientos]);
-
-    if (checkAsientos.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        error: 'Uno o más asientos seleccionados ya no están disponibles',
-        asientos_ocupados: checkAsientos.rows.map(r => r.asiento_id)
-      });
-    }
+      WHERE programacion_id = $1 AND estado = 'PENDIENTE' AND expira_en <= statement_timestamp()
+    `, [trip.id]);
 
     // Calcular el total
     const total = pasajeros.reduce((sum, p) => sum + Number(p.precio || 0), 0);
@@ -75,7 +74,7 @@ exports.crearReserva = async (req, res) => {
     // Insertar la cabecera de la reserva con finalUsuarioId asociado
     const insertReserva = await client.query(`
       INSERT INTO reservas (programacion_id, usuario_id, codigo_reserva, total, estado, expira_en)
-      VALUES ($1, $2, $3, $4, 'PENDIENTE', CURRENT_TIMESTAMP + ($5 || ' minutes')::interval)
+      VALUES ($1, $2, $3, $4, 'PENDIENTE', statement_timestamp() + ($5 || ' minutes')::interval)
       RETURNING *
     `, [programacion_id, finalUsuarioId, codigoReserva, total, minutosBloqueo]);
 
