@@ -33,6 +33,8 @@ CREATE TABLE cooperativas (
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE usuarios ADD COLUMN cooperativa_id INT REFERENCES cooperativas(id) ON DELETE SET NULL;
+
 -- 3. Frecuencias oficiales autorizadas por la ANT
 CREATE TABLE frecuencias (
     id SERIAL PRIMARY KEY,

@@ -10,15 +10,16 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [error, setError] = useState('');
   const [rolDetectado, setRolDetectado] = useState(null);
 
-  const usuariosPrueba = [
-    { rol: 'SUPERADMIN', correo: 'admin@transporteuta.com', pass: 'hash_admin_123', label: 'SuperAdmin General' },
-    { rol: 'ADMIN_COOP', correo: 'gerente@cita.com', pass: 'admin123', label: 'Gerente Cooperativa' },
-    { rol: 'OFICINISTA', correo: 'taquilla@transporteuta.com', pass: 'hash_oficina_123', label: 'Oficinista / Taquilla' }
-  ];
+  const usuariosPrueba = import.meta.env.DEV ? [
+    { rol: 'SUPERADMIN', correo: 'admin@transporteuta.com', label: 'SuperAdmin General' },
+    { rol: 'ADMIN_COOP', correo: 'gerente@cita.com', label: 'Gerente CITA' },
+    { rol: 'ADMIN_COOP', correo: 'gerente@pelileo.com', label: 'Gerente Pelileo' },
+    { rol: 'OFICINISTA', correo: 'taquilla@transporteuta.com', label: 'Oficinista / Taquilla' }
+  ] : [];
 
   const handleSeleccionarPrueba = (user) => {
     setCorreo(user.correo);
-    setPassword(user.pass);
+    setPassword('');
     setError('');
   };
 
@@ -60,32 +61,7 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
         }
       }, 700);
     } catch (err) {
-      // Fallback para pruebas si el backend estuviera desconectado
-      const usuarioSimulado = usuariosPrueba.find(u => u.correo.toLowerCase() === correo.toLowerCase());
-      if (usuarioSimulado) {
-        const sesion = {
-          id: usuarioSimulado.rol === 'ADMIN_COOP' ? 1 : 99,
-          nombre: usuarioSimulado.label,
-          correo: usuarioSimulado.correo,
-          rol: usuarioSimulado.rol,
-          cooperativa_id: usuarioSimulado.rol === 'ADMIN_COOP' ? 1 : null,
-          cooperativa_nombre: usuarioSimulado.rol === 'ADMIN_COOP' ? 'Cooperativa de Transportes CITA' : null
-        };
-        localStorage.setItem('transporte_auth', JSON.stringify(sesion));
-        setRolDetectado(usuarioSimulado.rol);
-
-        setTimeout(() => {
-          if (usuarioSimulado.rol === 'OFICINISTA') {
-            window.location.hash = 'oficina';
-            if (onLoginSuccess) onLoginSuccess(sesion, '/oficina');
-          } else {
-            window.location.hash = 'admin';
-            if (onLoginSuccess) onLoginSuccess(sesion, '/admin');
-          }
-        }, 700);
-      } else {
-        setError(err.message || 'Error al iniciar sesión');
-      }
+      setError(err.message || 'Error al iniciar sesión');
     } finally {
       setCargando(false);
     }
@@ -176,12 +152,12 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
           </button>
         </form>
 
-        <div style={styles.quickAccessSection}>
-          <p style={styles.quickAccessTitle}>Credenciales de prueba rápida (Roles):</p>
+        {usuariosPrueba.length > 0 && <div style={styles.quickAccessSection}>
+          <p style={styles.quickAccessTitle}>Cuentas de prueba (ingresa su contraseña):</p>
           <div style={styles.quickAccessButtons}>
             {usuariosPrueba.map((u) => (
               <button
-                key={u.rol}
+                key={u.correo}
                 type="button"
                 onClick={() => handleSeleccionarPrueba(u)}
                 style={styles.quickBtn}
@@ -191,7 +167,7 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
               </button>
             ))}
           </div>
-        </div>
+        </div>}
 
         <div style={styles.footerLink}>
           <a href="#" onClick={(e) => { e.preventDefault(); window.location.hash = 'buscar'; }} style={styles.backLink}>

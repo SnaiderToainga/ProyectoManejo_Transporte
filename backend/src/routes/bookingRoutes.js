@@ -3,6 +3,10 @@ const router = express.Router();
 const bookingCtrl = require('../controllers/bookingController');
 const upload = require('../config/multer');
 
+router.post('/mis-compras/acceso', bookingCtrl.solicitarAccesoHistorial);
+router.get('/mis-compras', bookingCtrl.obtenerHistorialCliente);
+router.get('/reservas/:codigo/boletos/:boletoId/qr', bookingCtrl.obtenerQrBoleto);
+
 router.post('/reservas', bookingCtrl.crearReserva);
 router.get('/reservas/:codigo', bookingCtrl.obtenerReservaPorCodigo);
 router.post('/reservas/:codigo/comprobante', upload.single('comprobante'), bookingCtrl.subirComprobante);

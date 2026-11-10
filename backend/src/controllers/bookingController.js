@@ -1,8 +1,81 @@
 // backend/src/controllers/bookingController.js
 const ticketService = require('../services/ticketService');
+const historyAccess = require('../services/historyAccess');
 const { lockTrip, occupiedSeats, seatIds, tripSeats } = require('../services/seatInventory');
 const db = require('../config/db');
 const pool = db.pool || db;
+
+exports.solicitarAccesoHistorial = async (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  res.set('Cache-Control', 'no-store');
+  if (email.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Ingresa un correo válido' });
+  }
+  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM || !process.env.FRONTEND_URL
+      || Buffer.byteLength(process.env.HISTORY_TOKEN_SECRET || '') < 32) {
+    return res.status(503).json({ error: 'La consulta por correo no está disponible en este momento' });
+  }
+  if (!historyAccess.allowRequest(req.ip, email)) {
+    return res.status(429).json({ error: 'Demasiadas solicitudes. Inténtalo más tarde.' });
+  }
+  try {
+    // Responder igual haya compras o no: el historial solo se abre desde el buzón.
+    await historyAccess.sendLink(email);
+    res.status(202).json({ mensaje: 'Revisa tu correo para abrir el historial.' });
+  } catch (err) {
+    console.error('Error al enviar enlace de historial:', err.message);
+    res.status(503).json({ error: 'No se pudo enviar el enlace. Inténtalo más tarde.' });
+  }
+};
+
+exports.obtenerHistorialCliente = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const match = /^Bearer (.+)$/i.exec(req.get('authorization') || '');
+  const email = match && historyAccess.verifyToken(match[1]);
+  if (!email) return res.status(401).json({ error: 'Abre un enlace de acceso válido enviado a tu correo' });
+  try {
+    const result = await pool.query(`
+      SELECT r.id, r.codigo_reserva, r.total, r.estado, r.creado_en, r.expira_en,
+             r.comprobante_url IS NOT NULL AS tiene_comprobante,
+             c.nombre AS cooperativa_nombre, f.origen, f.destino, pv.fecha_viaje,
+             pv.hora_salida_programada, COUNT(d.id)::int AS total_pasajeros
+      FROM reservas r
+      JOIN usuarios u ON u.id = r.usuario_id
+      JOIN programacion_viajes pv ON pv.id = r.programacion_id
+      JOIN frecuencias f ON f.id = pv.frecuencia_id
+      JOIN cooperativas c ON c.id = f.cooperativa_id
+      LEFT JOIN detalle_boletos d ON d.reserva_id = r.id
+      WHERE LOWER(TRIM(u.correo)) = $1
+      GROUP BY r.id, c.nombre, f.origen, f.destino, pv.fecha_viaje, pv.hora_salida_programada
+      ORDER BY r.creado_en DESC, r.id DESC
+    `, [email]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al consultar historial:', err.message);
+    res.status(500).json({ error: 'No se pudo consultar el historial' });
+  }
+};
+
+exports.obtenerQrBoleto = async (req, res) => {
+  const { codigo, boletoId } = req.params;
+  if (!/^[A-Z0-9-]{1,12}$/.test(codigo) || !/^\d{1,10}$/.test(boletoId)) return res.sendStatus(404);
+  try {
+    const result = await pool.query(`
+      SELECT a.numero_asiento FROM reservas r
+      JOIN detalle_boletos d ON d.reserva_id = r.id
+      JOIN asientos a ON a.id = d.asiento_id
+      WHERE r.codigo_reserva = $1 AND r.estado = 'PAGADO' AND d.id = $2::bigint
+    `, [codigo, boletoId]);
+    if (!result.rows.length) return res.sendStatus(404);
+    const base = (process.env.FRONTEND_URL || 'https://proyecto-web.online').replace(/\/$/, '');
+    const url = `${base}/validar?reserva=${encodeURIComponent(codigo)}&asiento=${result.rows[0].numero_asiento}`;
+    res.set('Cache-Control', 'private, no-store');
+    res.type('png').send(await require('qrcode').toBuffer(url, { width: 200, margin: 2 }));
+  } catch (err) {
+    console.error('Error al generar QR de respaldo:', err.message);
+    res.sendStatus(500);
+  }
+};
 
 // 1. Crear reserva temporal (Bloqueo de 5 minutos)
 exports.crearReserva = async (req, res) => {
