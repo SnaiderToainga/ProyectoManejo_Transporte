@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const { verifyCooperativaOwnership } = require('../middlewares/authMiddleware');
 
 // 1. Autenticación y roles
 router.post('/login', adminController.login);
@@ -8,8 +9,8 @@ router.post('/login', adminController.login);
 // 2. Cooperativas y branding
 router.get('/cooperativas', adminController.getCooperativas);
 router.post('/cooperativas', adminController.crearCooperativa);
-router.put('/cooperativas/:id', adminController.actualizarCooperativa);
-router.delete('/cooperativas/:id', adminController.eliminarCooperativa);
+router.put('/cooperativas/:id', verifyCooperativaOwnership, adminController.actualizarCooperativa);
+router.delete('/cooperativas/:id', verifyCooperativaOwnership, adminController.eliminarCooperativa);
 
 // 3. Usuarios de cooperativa
 router.get('/usuarios', adminController.getUsuarios);
