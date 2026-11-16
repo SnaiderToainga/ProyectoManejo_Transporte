@@ -1,6 +1,6 @@
 // backend/src/utils/validators.js
 
-// 1. Algoritmo oficial ecuatoriano Módulo 10 para Cédula
+// 1. Algoritmo oficial ecuatoriano Módulo 10 para Cédula (COOP-05)
 exports.validarCedulaEcuatoriana = (cedula) => {
   if (!cedula || typeof cedula !== 'string') return false;
   const clean = cedula.trim();
@@ -24,7 +24,7 @@ exports.validarCedulaEcuatoriana = (cedula) => {
   return digitoVerificador === parseInt(clean.charAt(9), 10);
 };
 
-// 2. Validación de RUC oficial (13 dígitos terminado en 001)
+// 2. Validación de RUC oficial (13 dígitos terminado en 001) (COOP-01)
 exports.validarRucEcuatoriano = (ruc) => {
   if (!ruc || typeof ruc !== 'string') return false;
   const clean = ruc.trim();
@@ -33,10 +33,36 @@ exports.validarRucEcuatoriano = (ruc) => {
   return exports.validarCedulaEcuatoriana(clean.substring(0, 10));
 };
 
-// 3. Contraseña Segura (mínimo 8 caracteres, mayúscula, minúscula y número)
+// 3. Validación de Teléfono Celular ecuatoriano (COOP-03: comienza con 09, 10 dígitos)
+exports.validarCelularEcuatoriano = (telefono) => {
+  if (!telefono || typeof telefono !== 'string') return false;
+  return /^09\d{8}$/.test(telefono.trim());
+};
+
+// 4. Validación de Resolución Administrativa ANT (COOP-02)
+exports.validarResolucionANT = (resolucion) => {
+  if (!resolucion || typeof resolucion !== 'string') return false;
+  return /^(ANT|RES|RESOL)-[A-Z0-9-]{3,20}$/i.test(resolucion.trim());
+};
+
+// 5. Validación de Correo Electrónico institucional / usuario (COOP-06)
+exports.validarEmail = (correo) => {
+  if (!correo || typeof correo !== 'string') return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim());
+};
+
+// 6. Validación de Banco y soporte de Banco "Otro" con texto libre (COOP-08, COOP-09)
+exports.validarBanco = (banco, bancoOtro) => {
+  if (!banco || typeof banco !== 'string') return false;
+  if (banco.trim().toLowerCase() === 'otro') {
+    return Boolean(bancoOtro && typeof bancoOtro === 'string' && bancoOtro.trim().length >= 3);
+  }
+  return true;
+};
+
+// 7. Contraseña Segura (COOP-07: mínimo 8 caracteres, mayúscula, minúscula y número)
 exports.validarPasswordSeguro = (password) => {
   if (!password || typeof password !== 'string') return false;
-  // Mínimo 8 caracteres, al menos 1 letra mayúscula, 1 minúscula y 1 número
   const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/;
   return regex.test(password);
 };
