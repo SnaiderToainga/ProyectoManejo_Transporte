@@ -29,7 +29,8 @@ import {
   mockFrecuencias
 } from './mockDataAdmin.js';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/$/, '');
+const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_URL = (import.meta.env.VITE_API_URL || (isLocalHost ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
 
 export default function GestionCooperativas({ usuario: propUsuario, onLogout }) {
   // Detección robusta de sesión y rol
@@ -72,6 +73,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
   // Formulario nueva Frecuencia ANT y modo edición
   const [frecuenciaEditandoId, setFrecuenciaEditandoId] = useState(null);
+  const [nuevaParadaTexto, setNuevaParadaTexto] = useState('');
   const [formFrecuencia, setFormFrecuencia] = useState({
     cooperativa_id: coopId || 1,
     resolucion_ant: '',
@@ -192,7 +194,13 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   const handleEliminarCoop = async (id, nombre) => {
     if (!confirm(`¿Confirmas la eliminación de la cooperativa "${nombre}" y su flota asociada?`)) return;
     try {
-      const resp = await fetch(`${API_URL}/admin/cooperativas/${id}`, { method: 'DELETE' });
+      const resp = await fetch(`${API_URL}/admin/cooperativas/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-role': authUser?.rol || 'SUPERADMIN',
+          'x-user-cooperativa-id': String(coopId || '')
+        }
+      });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error);
       setCooperativas(cooperativas.filter(c => c.id !== id));
@@ -205,18 +213,27 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
   // Manejar actualización de branding
   const handleGuardarBranding = async (coopActualizada) => {
+    let coopGuardada = coopActualizada;
     try {
-      await fetch(`${API_URL}/admin/cooperativas/${coopActualizada.id}`, {
+      const resp = await fetch(`${API_URL}/admin/cooperativas/${coopActualizada.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': authUser?.rol || 'SUPERADMIN',
+          'x-user-cooperativa-id': String(coopId || coopActualizada.id || '')
+        },
         body: JSON.stringify(coopActualizada)
       });
+      const data = await resp.json().catch(() => null);
+      if (resp.ok && data?.cooperativa) {
+        coopGuardada = { ...coopActualizada, ...data.cooperativa };
+      }
     } catch (e) {
       console.warn('Branding actualizado localmente:', e);
     }
-    setCooperativas(cooperativas.map(c => c.id === coopActualizada.id ? coopActualizada : c));
+    setCooperativas(prev => prev.map(c => Number(c.id) === Number(coopGuardada.id) ? coopGuardada : c));
     setModalBrandingAbierto(false);
-    mostrarAlerta(`Identidad visual y branding de "${coopActualizada.nombre}" actualizados.`);
+    mostrarAlerta(`Identidad visual y branding de "${coopGuardada.nombre}" guardados permanentemente en la base de datos.`);
   };
 
   // Guardar Bus (Disparador de Loop de 40/41 Asientos)
@@ -305,19 +322,66 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     }
   };
 
+  const esResolucionValida = (res) => /^(ANT|RES|RESOL)-[A-Z0-9-]{3,20}$/i.test(String(res || '').trim());
+
+  const paradasListaFormulario = formFrecuencia.paradas_intermedias
+    ? formFrecuencia.paradas_intermedias.split(',').map(p => p.trim()).filter(Boolean)
+    : [];
+
+  const handleAgregarParada = (nombreParada) => {
+    const limpia = String(nombreParada || nuevaParadaTexto || '').trim();
+    if (!limpia) return;
+    if (limpia.toLowerCase() === formFrecuencia.origen.trim().toLowerCase() || limpia.toLowerCase() === formFrecuencia.destino.trim().toLowerCase()) {
+      return mostrarAlerta('La parada intermedia no puede ser igual al punto de origen o destino final.');
+    }
+    if (paradasListaFormulario.some(p => p.toLowerCase() === limpia.toLowerCase())) {
+      return mostrarAlerta(`La parada "${limpia}" ya está agregada en el recorrido.`);
+    }
+    const nuevaLista = [...paradasListaFormulario, limpia];
+    setFormFrecuencia({ ...formFrecuencia, paradas_intermedias: nuevaLista.join(', ') });
+    setNuevaParadaTexto('');
+  };
+
+  const handleQuitarParada = (idx) => {
+    const nuevaLista = paradasListaFormulario.filter((_, i) => i !== idx);
+    setFormFrecuencia({ ...formFrecuencia, paradas_intermedias: nuevaLista.join(', ') });
+  };
+
+  const handleMoverParada = (idx, dir) => {
+    const target = idx + dir;
+    if (target < 0 || target >= paradasListaFormulario.length) return;
+    const copia = [...paradasListaFormulario];
+    const temp = copia[idx];
+    copia[idx] = copia[target];
+    copia[target] = temp;
+    setFormFrecuencia({ ...formFrecuencia, paradas_intermedias: copia.join(', ') });
+  };
+
   // Guardar o Actualizar Frecuencia ANT
   const handleGuardarFrecuencia = async (e) => {
     e.preventDefault();
     if (!formFrecuencia.resolucion_ant || !formFrecuencia.destino) return;
 
+    if (!esResolucionValida(formFrecuencia.resolucion_ant)) {
+      return mostrarAlerta('El formato de la Resolución ANT es inválido. Use ej: ANT-RES-2026-001');
+    }
+    if (formFrecuencia.origen.trim().toLowerCase() === formFrecuencia.destino.trim().toLowerCase()) {
+      return mostrarAlerta('El origen y el destino de la frecuencia deben ser diferentes.');
+    }
+
     if (isGerente && !coopId) return mostrarAlerta('Vuelve a iniciar sesión con una cooperativa asignada.');
     const coopTargetId = isGerente ? Number(coopId) : Number(formFrecuencia.cooperativa_id);
-    const paradasList = formFrecuencia.paradas_intermedias
-      ? formFrecuencia.paradas_intermedias.split(',').map(p => p.trim()).filter(Boolean)
+    const paradasList = formFrecuencia.tipo_servicio === 'PARADAS'
+      ? paradasListaFormulario
       : [];
+
+    if (formFrecuencia.tipo_servicio === 'PARADAS' && paradasList.length === 0) {
+      return mostrarAlerta('Para la modalidad PARADAS INTERMEDIAS debes agregar al menos una parada en el recorrido (FREC-06).');
+    }
 
     const payloadFrecuencia = {
       ...formFrecuencia,
+      resolucion_ant: formFrecuencia.resolucion_ant.trim().toUpperCase(),
       cooperativa_id: coopTargetId,
       paradas_intermedias: paradasList,
       es_destacada: Boolean(formFrecuencia.es_destacada),
@@ -387,6 +451,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       }
     }
 
+    setNuevaParadaTexto('');
     setFormFrecuencia({
       cooperativa_id: coopTargetId,
       resolucion_ant: '',
@@ -500,58 +565,159 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
   return (
     <div style={styles.container}>
-      {/* Barra superior de encabezado adaptativa por Rol */}
-      <header style={styles.header}>
-        <div>
-          <div style={{
-            ...styles.badgeRol,
-            background: isGerente ? '#EFF6FF' : '#FEF3C7',
-            color: isGerente ? '#1D4ED8' : '#92400E',
-            borderColor: isGerente ? '#BFDBFE' : '#FDE68A'
-          }}>
-            {isGerente ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                <Briefcase size={14} /> GERENTE DE COOPERATIVA · {coopAsignadaNombre.toUpperCase()}
-              </span>
-            ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                <Shield size={14} /> SUPERADMINISTRADOR & QA GLOBAL
-              </span>
-            )}
-          </div>
-          <h1 style={styles.mainTitle}>
-            {isGerente ? `Panel de Gerencia · ${coopAsignadaNombre}` : 'Panel de Gestión y Flotas Interprovinciales'}
-          </h1>
-          <p style={styles.subtitle}>
-            {isGerente
-              ? `Supervisión exclusiva de unidades, frecuencias autorizadas y marca corporativa para ${coopAsignadaNombre}.`
-              : 'Supervisión de Cooperativas, Asignación ANT y Coherencia de Asientos'}
-          </p>
-        </div>
-        <div style={styles.headerActions}>
-          <button onClick={cargarDatos} style={styles.btnSecondary} title="Recargar datos">
-            <RefreshCw size={16} />
-            <span>Sincronizar</span>
-          </button>
-          {!isGerente && (
-            <button onClick={() => setModalUsuarioAbierto(true)} style={styles.btnSecondary}>
-              <Users size={16} />
-              <span>Crear Usuario</span>
-            </button>
-          )}
-          <button
-            onClick={() => {
-              localStorage.removeItem('transporte_auth');
-              if (onLogout) onLogout();
-              window.location.hash = 'login';
-            }}
-            style={styles.btnLogout}
+      {/* Barra superior de encabezado adaptativa por Rol (Banner completo con imagen para Cooperativa - COOP-21) */}
+      {(() => {
+        const coopActiva = isGerente
+          ? (cooperativas.find(c => Number(c.id) === Number(coopId)) || cooperativasVisibles[0])
+          : null;
+        const colorCoop = coopActiva?.color_distintivo || '#1D4ED8';
+        const bgImage = coopActiva?.logo_url;
+
+        return (
+          <header
+            style={
+              isGerente
+                ? {
+                    ...styles.header,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    borderRadius: '18px',
+                    padding: '1.75rem 2rem',
+                    marginBottom: '1.75rem',
+                    minHeight: '165px',
+                    color: '#FFFFFF',
+                    backgroundImage: bgImage
+                      ? `linear-gradient(92deg, ${colorCoop}F2 0%, ${colorCoop}D9 48%, rgba(15, 23, 42, 0.35) 100%), url("${bgImage}")`
+                      : `linear-gradient(120deg, ${colorCoop} 0%, #0F172A 100%)`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    border: `2px solid ${colorCoop}`,
+                    boxShadow: '0 12px 28px -6px rgba(15, 23, 42, 0.25)'
+                  }
+                : styles.header
+            }
           >
-            <LogOut size={16} />
-            <span>Cerrar Sesión</span>
-          </button>
-        </div>
-      </header>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.35rem', flexWrap: 'wrap', zIndex: 1 }}>
+              {isGerente && (
+                bgImage ? (
+                  <img
+                    src={bgImage}
+                    alt={coopAsignadaNombre}
+                    style={{
+                      width: '135px',
+                      height: '100px',
+                      borderRadius: '14px',
+                      objectFit: 'cover',
+                      background: '#FFFFFF',
+                      border: '3px solid #FFFFFF',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.28)',
+                      flexShrink: 0
+                    }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '110px',
+                      height: '100px',
+                      borderRadius: '14px',
+                      background: 'rgba(255,255,255,0.18)',
+                      border: '3px solid #FFFFFF',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 900,
+                      fontSize: '2rem',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
+                      flexShrink: 0
+                    }}
+                  >
+                    {coopAsignadaNombre.slice(0, 2).toUpperCase()}
+                  </div>
+                )
+              )}
+              <div>
+                <div
+                  style={{
+                    ...styles.badgeRol,
+                    background: isGerente ? 'rgba(255, 255, 255, 0.95)' : '#FEF3C7',
+                    color: isGerente ? colorCoop : '#92400E',
+                    borderColor: isGerente ? '#FFFFFF' : '#FDE68A',
+                    boxShadow: isGerente ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
+                  }}
+                >
+                  {isGerente ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 800 }}>
+                      <Briefcase size={14} /> GERENTE DE COOPERATIVA · {coopAsignadaNombre.toUpperCase()}
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Shield size={14} /> SUPERADMINISTRADOR & QA GLOBAL
+                    </span>
+                  )}
+                </div>
+                <h1
+                  style={{
+                    ...styles.mainTitle,
+                    color: isGerente ? '#FFFFFF' : '#0F172A',
+                    textShadow: isGerente ? '0 2px 10px rgba(0,0,0,0.35)' : 'none',
+                    fontSize: isGerente ? '1.95rem' : styles.mainTitle.fontSize
+                  }}
+                >
+                  {isGerente ? `Panel de Gerencia · ${coopAsignadaNombre}` : 'Panel de Gestión y Flotas Interprovinciales'}
+                </h1>
+                <p
+                  style={{
+                    ...styles.subtitle,
+                    color: isGerente ? 'rgba(255, 255, 255, 0.92)' : '#64748B',
+                    fontWeight: isGerente ? 500 : 400
+                  }}
+                >
+                  {isGerente
+                    ? `Supervisión exclusiva de unidades, frecuencias autorizadas y marca corporativa para ${coopAsignadaNombre}.`
+                    : 'Supervisión de Cooperativas, Asignación ANT y Coherencia de Asientos'}
+                </p>
+              </div>
+            </div>
+            <div style={{ ...styles.headerActions, zIndex: 1 }}>
+              <button
+                onClick={cargarDatos}
+                style={
+                  isGerente
+                    ? { ...styles.btnSecondary, background: 'rgba(255,255,255,0.95)', color: '#0F172A', border: 'none', fontWeight: 700, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                    : styles.btnSecondary
+                }
+                title="Recargar datos"
+              >
+                <RefreshCw size={16} />
+                <span>Sincronizar</span>
+              </button>
+              {!isGerente && (
+                <button onClick={() => setModalUsuarioAbierto(true)} style={styles.btnSecondary}>
+                  <Users size={16} />
+                  <span>Crear Usuario</span>
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  localStorage.removeItem('transporte_auth');
+                  if (onLogout) onLogout();
+                  window.location.hash = 'login';
+                }}
+                style={
+                  isGerente
+                    ? { ...styles.btnLogout, background: '#FEF2F2', color: '#DC2626', border: '2px solid #FECACA', fontWeight: 700, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                    : styles.btnLogout
+                }
+              >
+                <LogOut size={16} />
+                <span>Cerrar Sesión</span>
+              </button>
+            </div>
+          </header>
+        );
+      })()}
 
       {alerta && (
         <div style={styles.alertSuccess}>
@@ -664,8 +830,42 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
             {cooperativasVisibles.map((coop) => (
               <div key={coop.id} style={styles.coopCard}>
                 <div style={styles.coopCardHeader}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ ...styles.colorIndicator, backgroundColor: coop.color_distintivo || '#1E40AF' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+                    {coop.logo_url ? (
+                      <img
+                        src={coop.logo_url}
+                        alt={`Logo ${coop.nombre}`}
+                        style={{
+                          width: '72px',
+                          height: '72px',
+                          borderRadius: '14px',
+                          objectFit: 'cover',
+                          backgroundColor: '#FFFFFF',
+                          border: `3px solid ${coop.color_distintivo || '#1E40AF'}`,
+                          padding: '3px',
+                          boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
+                          flexShrink: 0
+                        }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: '72px',
+                        height: '72px',
+                        borderRadius: '14px',
+                        backgroundColor: coop.color_distintivo || '#1E40AF',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: '800',
+                        fontSize: '1.4rem',
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                        flexShrink: 0
+                      }}>
+                        {String(coop.nombre || 'CO').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <h3 style={styles.coopName}>{coop.nombre}</h3>
                       <span style={styles.coopRuc}>RUC: {coop.ruc}</span>
@@ -685,9 +885,24 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                     <span style={styles.infoLabel}>Cuenta:</span>
                     <span style={styles.infoVal}>{coop.cuenta_bancaria || 'No asignada'}</span>
                   </div>
+                  {coop.telefono && (
+                    <div style={styles.infoRow}>
+                      <span style={styles.infoLabel}>Teléfono:</span>
+                      <span style={styles.infoVal}>{coop.telefono}</span>
+                    </div>
+                  )}
+                  {coop.direccion && (
+                    <div style={styles.infoRow}>
+                      <span style={styles.infoLabel}>Matriz:</span>
+                      <span style={styles.infoVal}>{coop.direccion}</span>
+                    </div>
+                  )}
                   <div style={styles.infoRow}>
                     <span style={styles.infoLabel}>Color de Marca:</span>
-                    <code style={styles.colorCode}>{coop.color_distintivo || '#1E40AF'}</code>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: coop.color_distintivo || '#1E40AF', display: 'inline-block', border: '1px solid #CBD5E1' }} />
+                      <code style={styles.colorCode}>{coop.color_distintivo || '#1E40AF'}</code>
+                    </div>
                   </div>
                 </div>
 
@@ -744,16 +959,9 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
               <p style={styles.panelSubtitle}>El sistema generará automáticamente sus 40 o 41 asientos con su configuración física.</p>
 
               <form onSubmit={handleGuardarBus} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <label style={styles.formLabel}>Cooperativa Perteneciente</label>
-                  {isGerente ? (
-                    <input
-                      type="text"
-                      disabled
-                      value={coopAsignadaNombre}
-                      style={{ ...styles.formInput, background: '#F8FAFC', color: '#475569', fontWeight: 'bold' }}
-                    />
-                  ) : (
+                {!isGerente && (
+                  <div>
+                    <label style={styles.formLabel}>Cooperativa Perteneciente</label>
                     <select
                       value={formBus.cooperativa_id}
                       onChange={(e) => setFormBus({ ...formBus, cooperativa_id: e.target.value })}
@@ -763,8 +971,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                         <option key={c.id} value={c.id}>{c.nombre}</option>
                       ))}
                     </select>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <div>
@@ -939,16 +1147,9 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
               </p>
 
               <form onSubmit={handleGuardarFrecuencia} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <label style={styles.formLabel}>Cooperativa</label>
-                  {isGerente ? (
-                    <input
-                      type="text"
-                      disabled
-                      value={coopAsignadaNombre}
-                      style={{ ...styles.formInput, background: '#F8FAFC', color: '#475569', fontWeight: 'bold' }}
-                    />
-                  ) : (
+                {!isGerente && (
+                  <div>
+                    <label style={styles.formLabel}>Cooperativa</label>
                     <select
                       value={formFrecuencia.cooperativa_id}
                       onChange={(e) => setFormFrecuencia({ ...formFrecuencia, cooperativa_id: e.target.value })}
@@ -958,19 +1159,39 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                         <option key={c.id} value={c.id}>{c.nombre}</option>
                       ))}
                     </select>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div>
-                  <label style={styles.formLabel}>Resolución ANT</label>
+                  <label style={styles.formLabel}>Resolución ANT (Formato Oficial)</label>
                   <input
                     type="text"
                     required
-                    placeholder="ANT-RES-2024-001"
+                    placeholder="ANT-RES-2026-001"
                     value={formFrecuencia.resolucion_ant}
-                    onChange={(e) => setFormFrecuencia({ ...formFrecuencia, resolucion_ant: e.target.value })}
-                    style={styles.formInput}
+                    onChange={(e) => setFormFrecuencia({ ...formFrecuencia, resolucion_ant: e.target.value.toUpperCase() })}
+                    style={{
+                      ...styles.formInput,
+                      borderColor: !formFrecuencia.resolucion_ant
+                        ? '#CBD5E1'
+                        : esResolucionValida(formFrecuencia.resolucion_ant)
+                          ? '#10B981'
+                          : '#F59E0B'
+                    }}
                   />
+                  {formFrecuencia.resolucion_ant && (
+                    <span style={{
+                      display: 'block',
+                      marginTop: '4px',
+                      fontSize: '0.73rem',
+                      fontWeight: 600,
+                      color: esResolucionValida(formFrecuencia.resolucion_ant) ? '#059669' : '#D97706'
+                    }}>
+                      {esResolucionValida(formFrecuencia.resolucion_ant)
+                        ? '✓ Resolución administrativa ANT con formato válido'
+                        : '⚠️ Use prefijo oficial ANT-, RES- o RESOL- (ej: ANT-RES-2026-001)'}
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -1028,27 +1249,130 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                 </div>
 
                 <div>
-                  <label style={styles.formLabel}>Modalidad de Servicio</label>
+                  <label style={styles.formLabel}>Modalidad de Servicio (FREC-05)</label>
                   <select
                     value={formFrecuencia.tipo_servicio}
-                    onChange={(e) => setFormFrecuencia({ ...formFrecuencia, tipo_servicio: e.target.value })}
+                    onChange={(e) => setFormFrecuencia({
+                      ...formFrecuencia,
+                      tipo_servicio: e.target.value,
+                      paradas_intermedias: e.target.value === 'DIRECTO' ? '' : formFrecuencia.paradas_intermedias
+                    })}
                     style={styles.formInput}
                   >
-                    <option value="DIRECTO">DIRECTO (Terminal a Terminal)</option>
-                    <option value="PARADAS">PARADAS INTERMEDIAS</option>
+                    <option value="DIRECTO">DIRECTO (Terminal a Terminal sin escalas)</option>
+                    <option value="PARADAS">PARADAS INTERMEDIAS (Embarque y desembarque en ruta)</option>
                   </select>
                 </div>
 
-                {formFrecuencia.tipo_servicio === 'PARADAS' && (
-                  <div>
-                    <label style={styles.formLabel}>Paradas Intermedias (separadas por coma)</label>
-                    <input
-                      type="text"
-                      placeholder="Ej: Latacunga, Salcedo, Machachi"
-                      value={formFrecuencia.paradas_intermedias}
-                      onChange={(e) => setFormFrecuencia({ ...formFrecuencia, paradas_intermedias: e.target.value })}
-                      style={styles.formInput}
-                    />
+                {formFrecuencia.tipo_servicio === 'DIRECTO' ? (
+                  <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px', padding: '0.6rem 0.75rem', fontSize: '0.78rem', color: '#166534', fontWeight: 500 }}>
+                    ⚡ <strong>Servicio Directo:</strong> Viaje expreso de <strong>{formFrecuencia.origen || 'Origen'}</strong> a <strong>{formFrecuencia.destino || 'Destino'}</strong> sin paradas intermedias.
+                  </div>
+                ) : (
+                  <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ ...styles.formLabel, margin: 0, color: '#1E293B' }}>
+                        📍 Módulo de Paradas Intermedias ({paradasListaFormulario.length} registradas)
+                      </label>
+                      <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600 }}>En orden de recorrido</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <input
+                        type="text"
+                        placeholder="Escribir ciudad/cantón de parada (ej: Latacunga)"
+                        value={nuevaParadaTexto}
+                        onChange={(e) => setNuevaParadaTexto(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAgregarParada();
+                          }
+                        }}
+                        style={{ ...styles.formInput, flex: 1, fontSize: '0.82rem', padding: '0.45rem 0.65rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAgregarParada()}
+                        style={{ background: '#1D4ED8', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '0 0.85rem', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        + Añadir Parada
+                      </button>
+                    </div>
+
+                    {/* Sugerencias rápidas de cantones frecuentes */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.7rem', color: '#64748B', marginRight: '2px' }}>Sugerencias rápidas:</span>
+                      {['Latacunga', 'Salcedo', 'Machachi', 'Riobamba', 'Aloasí', 'El Pingue', 'Totoras', 'Baños', 'Cuenca'].map(canton => (
+                        <button
+                          key={canton}
+                          type="button"
+                          onClick={() => handleAgregarParada(canton)}
+                          style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '2px 8px', fontSize: '0.7rem', color: '#334155', cursor: 'pointer' }}
+                        >
+                          + {canton}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Lista ordenada de paradas con controles de orden */}
+                    {paradasListaFormulario.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                        {paradasListaFormulario.map((parada, idx) => (
+                          <div
+                            key={`${parada}-${idx}`}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '4px 8px', fontSize: '0.8rem' }}
+                          >
+                            <span style={{ fontWeight: 600, color: '#1E293B' }}>
+                              <span style={{ display: 'inline-block', width: '20px', height: '20px', borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', textAlign: 'center', lineHeight: '20px', fontSize: '0.7rem', marginRight: '6px' }}>
+                                {idx + 1}
+                              </span>
+                              {parada}
+                            </span>
+                            <div style={{ display: 'inline-flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => handleMoverParada(idx, -1)}
+                                title="Subir orden"
+                                style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '4px', padding: '1px 5px', fontSize: '0.7rem', cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.4 : 1 }}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === paradasListaFormulario.length - 1}
+                                onClick={() => handleMoverParada(idx, 1)}
+                                title="Bajar orden"
+                                style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '4px', padding: '1px 5px', fontSize: '0.7rem', cursor: idx === paradasListaFormulario.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === paradasListaFormulario.length - 1 ? 0.4 : 1 }}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleQuitarParada(idx)}
+                                title="Quitar parada"
+                                style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626', borderRadius: '4px', padding: '1px 6px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.75rem', color: '#B45309', background: '#FEF3C7', padding: '6px 8px', borderRadius: '6px' }}>
+                        ⚠️ Agregue al menos una parada intermedia para habilitar el servicio por tramos.
+                      </div>
+                    )}
+
+                    {/* Vista previa visual del itinerario completo */}
+                    <div style={{ fontSize: '0.74rem', color: '#475569', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '6px 8px' }}>
+                      <strong>Itinerario completo:</strong>{' '}
+                      🟢 {formFrecuencia.origen || 'Origen'}{' '}
+                      {paradasListaFormulario.map((p, i) => `➔ 📍 ${p} (${i + 1})`).join(' ')}{' '}
+                      ➔ 🔴 {formFrecuencia.destino || 'Destino'}
+                    </div>
                   </div>
                 )}
 

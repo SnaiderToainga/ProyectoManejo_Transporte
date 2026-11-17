@@ -72,21 +72,23 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
             </button>
           </div>
         )}
-      {/* Selector de Cooperativa */}
-      <div style={styles.selectorBar}>
-        <label style={styles.selectorLabel}>Cooperativa seleccionada:</label>
-        <select
-          value={selectedId}
-          onChange={(e) => handleSelectCoop(e.target.value)}
-          style={styles.selectCoop}
-        >
-          {lista.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nombre} ({c.ruc})
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Selector de Cooperativa (Solo visible si no está fijada una cooperativa única - COOP-17) */}
+      {!cooperativa && lista.length > 1 && (
+        <div style={styles.selectorBar}>
+          <label style={styles.selectorLabel}>Cooperativa seleccionada:</label>
+          <select
+            value={selectedId}
+            onChange={(e) => handleSelectCoop(e.target.value)}
+            style={styles.selectCoop}
+          >
+            {lista.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre} ({c.ruc})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div style={styles.layoutGrid}>
         {/* PANEL IZQUIERDO: FORMULARIO DE PERSONALIZACIÓN */}
@@ -145,6 +147,26 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                 placeholder="https://ejemplo.com/logo-cooperativa.png"
                 style={styles.textInput}
               />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '10px', padding: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={`Vista previa ${coop?.nombre}`}
+                    style={{ width: '84px', height: '84px', borderRadius: '14px', objectFit: 'cover', backgroundColor: '#FFFFFF', border: `3px solid ${color}`, padding: '3px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : (
+                  <div style={{ width: '84px', height: '84px', borderRadius: '14px', backgroundColor: color, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '1.6rem' }}>
+                    {String(coop?.nombre || 'CO').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0F172A' }}>Vista Previa del Logotipo Institucional</div>
+                  <div style={{ fontSize: '0.76rem', color: '#64748B', marginTop: '2px' }}>
+                    Este logotipo se mostrará en grande en el encabezado de gerencia, en el directorio de cooperativas y en los resultados de búsqueda del cliente.
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Teléfono y Dirección */}
@@ -470,11 +492,13 @@ const styles = {
     gap: '8px'
   },
   ticketLogo: {
-    width: '26px',
-    height: '26px',
-    borderRadius: '50%',
+    width: '48px',
+    height: '48px',
+    borderRadius: '10px',
     objectFit: 'cover',
-    border: '1px solid rgba(255,255,255,0.4)'
+    backgroundColor: '#FFFFFF',
+    padding: '2px',
+    border: '2px solid rgba(255,255,255,0.85)'
   },
   ticketAntText: {
     fontSize: '9px',
