@@ -44,9 +44,9 @@ test('los filtros combinan ruta sin tildes, cooperativa, horario y estado', () =
   assert.equal(matchesTrip({ ...trip, estado: 'CANCELADO' }, {}), false);
 });
 test('se validan pasajeros y comprobantes antes de enviar solicitudes', () => {
-  assert.equal(passengerError([{ nombre: 'Pasajero de prueba', cedula: '0102030405' }]), '');
+  assert.equal(passengerError([{ nombre: 'Pasajero de prueba', cedula: '1710034065' }]), '');
   assert.ok(passengerError([{ nombre: 'A', cedula: '123' }]));
-  assert.ok(passengerError([{ nombre: 'Uno', cedula: '0102030405' }, { nombre: 'Dos', cedula: '0102030405' }]));
+  assert.ok(passengerError([{ nombre: 'Uno', cedula: '1710034065' }, { nombre: 'Dos', cedula: '1710034065' }]));
   assert.equal(receiptError({ name: 'pago.pdf', type: 'application/pdf', size: 100 }), '');
   assert.ok(receiptError({ name: 'pago.exe', type: 'image/png', size: 100 }));
   assert.ok(receiptError({ name: 'pago.png', type: 'image/png', size: 5 * 1024 * 1024 + 1 }));

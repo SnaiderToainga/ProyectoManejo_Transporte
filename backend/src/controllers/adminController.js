@@ -149,7 +149,7 @@ exports.crearCooperativa = async (req, res) => {
 
 exports.actualizarCooperativa = async (req, res) => {
   const { id } = req.params;
-  const { nombre, ruc, color_distintivo, cuenta_bancaria, banco, activo } = req.body;
+  const { nombre, ruc, color_distintivo, cuenta_bancaria, banco, activo, logo_url, telefono, direccion } = req.body;
 
   try {
     const query = `
@@ -159,8 +159,11 @@ exports.actualizarCooperativa = async (req, res) => {
           color_distintivo = COALESCE($3, color_distintivo),
           cuenta_bancaria = COALESCE($4, cuenta_bancaria),
           banco = COALESCE($5, banco),
-          activo = COALESCE($6, activo)
-      WHERE id = $7
+          activo = COALESCE($6, activo),
+          logo_url = COALESCE($7, logo_url),
+          telefono = COALESCE($8, telefono),
+          direccion = COALESCE($9, direccion)
+      WHERE id = $10
       RETURNING *
     `;
     const result = await db.query(query, [
@@ -170,6 +173,9 @@ exports.actualizarCooperativa = async (req, res) => {
       cuenta_bancaria,
       banco,
       activo,
+      logo_url,
+      telefono,
+      direccion,
       id
     ]);
 
@@ -410,10 +416,10 @@ exports.asignarPlantillaABus = async (req, res) => {
 exports.getFrecuencias = async (req, res) => {
   try {
     const query = `
-      SELECT f.*, c.nombre AS cooperativa_nombre, c.color_distintivo
+      SELECT f.*, c.nombre AS cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM frecuencias f
       JOIN cooperativas c ON f.cooperativa_id = c.id
-      ORDER BY f.id ASC
+      ORDER BY f.es_destacada DESC, f.id ASC
     `;
     const result = await db.query(query);
     res.json(result.rows);
@@ -430,17 +436,28 @@ exports.crearFrecuencia = async (req, res) => {
     destino,
     hora_salida,
     precio_base,
-    tipo_servicio = 'DIRECTO'
+    tipo_servicio = 'DIRECTO',
+    paradas_intermedias = [],
+    es_destacada = false,
+    patrocinio_inicio = null,
+    patrocinio_fin = null
   } = req.body;
 
   if (!cooperativa_id || !resolucion_ant || !origen || !destino || !hora_salida || !precio_base) {
     return res.status(400).json({ error: 'Todos los campos de la frecuencia ANT son obligatorios' });
   }
 
+  let paradasArray = [];
+  if (Array.isArray(paradas_intermedias)) {
+    paradasArray = paradas_intermedias.map(p => String(p).trim()).filter(Boolean);
+  } else if (typeof paradas_intermedias === 'string' && paradas_intermedias.trim()) {
+    paradasArray = paradas_intermedias.split(',').map(p => p.trim()).filter(Boolean);
+  }
+
   try {
     const query = `
-      INSERT INTO frecuencias (cooperativa_id, resolucion_ant, origen, destino, hora_salida, precio_base, tipo_servicio)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO frecuencias (cooperativa_id, resolucion_ant, origen, destino, hora_salida, precio_base, tipo_servicio, paradas_intermedias, es_destacada, patrocinio_inicio, patrocinio_fin)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `;
     const result = await db.query(query, [
@@ -450,7 +467,11 @@ exports.crearFrecuencia = async (req, res) => {
       destino.trim(),
       hora_salida,
       parseFloat(precio_base),
-      tipo_servicio
+      tipo_servicio,
+      paradasArray,
+      Boolean(es_destacada),
+      patrocinio_inicio || null,
+      patrocinio_fin || null
     ]);
 
     res.status(201).json({
@@ -512,18 +533,58 @@ exports.eliminarBus = async (req, res) => {
 
 exports.actualizarFrecuencia = async (req, res) => {
   const { id } = req.params;
-  const { resolucion_ant, origen, destino, hora_salida, precio_base, tipo_servicio } = req.body;
+  const {
+    cooperativa_id,
+    resolucion_ant,
+    origen,
+    destino,
+    hora_salida,
+    precio_base,
+    tipo_servicio,
+    paradas_intermedias,
+    es_destacada,
+    patrocinio_inicio,
+    patrocinio_fin
+  } = req.body;
+
+  let paradasArray = undefined;
+  if (paradas_intermedias !== undefined) {
+    if (Array.isArray(paradas_intermedias)) {
+      paradasArray = paradas_intermedias.map(p => String(p).trim()).filter(Boolean);
+    } else if (typeof paradas_intermedias === 'string') {
+      paradasArray = paradas_intermedias.split(',').map(p => p.trim()).filter(Boolean);
+    }
+  }
+
   try {
     const result = await db.query(
       `UPDATE frecuencias 
-       SET resolucion_ant = COALESCE($1, resolucion_ant),
-           origen = COALESCE($2, origen),
-           destino = COALESCE($3, destino),
-           hora_salida = COALESCE($4, hora_salida),
-           precio_base = COALESCE($5, precio_base),
-           tipo_servicio = COALESCE($6, tipo_servicio)
-       WHERE id = $7 RETURNING *`,
-      [resolucion_ant, origen, destino, hora_salida, precio_base, tipo_servicio, id]
+       SET cooperativa_id = COALESCE($1, cooperativa_id),
+           resolucion_ant = COALESCE($2, resolucion_ant),
+           origen = COALESCE($3, origen),
+           destino = COALESCE($4, destino),
+           hora_salida = COALESCE($5, hora_salida),
+           precio_base = COALESCE($6, precio_base),
+           tipo_servicio = COALESCE($7, tipo_servicio),
+           paradas_intermedias = COALESCE($8, paradas_intermedias),
+           es_destacada = COALESCE($9, es_destacada),
+           patrocinio_inicio = CASE WHEN $10::text IS NOT NULL THEN $10::timestamp ELSE patrocinio_inicio END,
+           patrocinio_fin = CASE WHEN $11::text IS NOT NULL THEN $11::timestamp ELSE patrocinio_fin END
+       WHERE id = $12 RETURNING *`,
+      [
+        cooperativa_id || null,
+        resolucion_ant || null,
+        origen || null,
+        destino || null,
+        hora_salida || null,
+        precio_base || null,
+        tipo_servicio || null,
+        paradasArray,
+        es_destacada !== undefined ? Boolean(es_destacada) : null,
+        patrocinio_inicio !== undefined ? (patrocinio_inicio || null) : null,
+        patrocinio_fin !== undefined ? (patrocinio_fin || null) : null,
+        id
+      ]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Frecuencia no encontrada' });
     res.json({ mensaje: 'Frecuencia actualizada con éxito', frecuencia: result.rows[0] });

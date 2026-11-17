@@ -13,6 +13,8 @@ import {
   Clock,
   DollarSign,
   Trash2,
+  Edit2,
+  Star,
   ToggleLeft,
   ToggleRight,
   Shield,
@@ -68,7 +70,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     estado: 'OPERATIVO'
   });
 
-  // Formulario nueva Frecuencia ANT
+  // Formulario nueva Frecuencia ANT y modo edición
+  const [frecuenciaEditandoId, setFrecuenciaEditandoId] = useState(null);
   const [formFrecuencia, setFormFrecuencia] = useState({
     cooperativa_id: coopId || 1,
     resolucion_ant: '',
@@ -76,7 +79,11 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     destino: '',
     hora_salida: '08:00',
     precio_base: '4.50',
-    tipo_servicio: 'DIRECTO'
+    tipo_servicio: 'DIRECTO',
+    paradas_intermedias: '',
+    es_destacada: false,
+    patrocinio_inicio: '',
+    patrocinio_fin: ''
   });
 
   // Formulario nuevo Usuario
@@ -298,43 +305,86 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     }
   };
 
-  // Guardar Frecuencia ANT
+  // Guardar o Actualizar Frecuencia ANT
   const handleGuardarFrecuencia = async (e) => {
     e.preventDefault();
     if (!formFrecuencia.resolucion_ant || !formFrecuencia.destino) return;
 
     if (isGerente && !coopId) return mostrarAlerta('Vuelve a iniciar sesión con una cooperativa asignada.');
     const coopTargetId = isGerente ? Number(coopId) : Number(formFrecuencia.cooperativa_id);
+    const paradasList = formFrecuencia.paradas_intermedias
+      ? formFrecuencia.paradas_intermedias.split(',').map(p => p.trim()).filter(Boolean)
+      : [];
 
-    try {
-      const resp = await fetch(`${API_URL}/admin/frecuencias`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formFrecuencia, cooperativa_id: coopTargetId })
-      });
-      const data = await resp.json();
+    const payloadFrecuencia = {
+      ...formFrecuencia,
+      cooperativa_id: coopTargetId,
+      paradas_intermedias: paradasList,
+      es_destacada: Boolean(formFrecuencia.es_destacada),
+      patrocinio_inicio: formFrecuencia.patrocinio_inicio || null,
+      patrocinio_fin: formFrecuencia.patrocinio_fin || null
+    };
 
-      if (resp.ok && data.frecuencia) {
+    if (frecuenciaEditandoId) {
+      // Modo Edición / Actualización
+      try {
+        const resp = await fetch(`${API_URL}/admin/frecuencias/${frecuenciaEditandoId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadFrecuencia)
+        });
+        const data = await resp.json();
+        if (resp.ok && data.frecuencia) {
+          const coopObj = cooperativas.find(c => c.id === coopTargetId);
+          const frecActualizada = {
+            ...data.frecuencia,
+            cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
+          };
+          setFrecuencias(prev => prev.map(f => f.id === frecuenciaEditandoId ? frecActualizada : f));
+          mostrarAlerta(`Frecuencia "${frecActualizada.resolucion_ant}" actualizada exitosamente.`);
+        }
+      } catch {
         const coopObj = cooperativas.find(c => c.id === coopTargetId);
-        const nuevaFrec = {
-          ...data.frecuencia,
+        setFrecuencias(prev => prev.map(f => f.id === frecuenciaEditandoId ? {
+          ...f,
+          ...payloadFrecuencia,
           cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
-        };
-        setFrecuencias([...frecuencias, nuevaFrec]);
-        mostrarAlerta(`Frecuencia "${formFrecuencia.origen} - ${formFrecuencia.destino}" autorizada por ANT.`);
-      } else {
-        throw new Error(data.error);
+        } : f));
+        mostrarAlerta(`Frecuencia actualizada (modo local).`);
       }
-    } catch {
-      const coopObj = cooperativas.find(c => c.id === coopTargetId);
-      const frecSimulada = {
-        id: Date.now(),
-        ...formFrecuencia,
-        cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
-        activo: true
-      };
-      setFrecuencias([...frecuencias, frecSimulada]);
-      mostrarAlerta(`Frecuencia ANT "${frecSimulada.resolucion_ant}" registrada.`);
+      setFrecuenciaEditandoId(null);
+    } else {
+      // Modo Creación
+      try {
+        const resp = await fetch(`${API_URL}/admin/frecuencias`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadFrecuencia)
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.frecuencia) {
+          const coopObj = cooperativas.find(c => c.id === coopTargetId);
+          const nuevaFrec = {
+            ...data.frecuencia,
+            cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
+          };
+          setFrecuencias([...frecuencias, nuevaFrec]);
+          mostrarAlerta(`Frecuencia "${formFrecuencia.origen} - ${formFrecuencia.destino}" autorizada por ANT.`);
+        } else {
+          throw new Error(data.error);
+        }
+      } catch {
+        const coopObj = cooperativas.find(c => c.id === coopTargetId);
+        const frecSimulada = {
+          id: Date.now(),
+          ...payloadFrecuencia,
+          cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
+          activo: true
+        };
+        setFrecuencias([...frecuencias, frecSimulada]);
+        mostrarAlerta(`Frecuencia ANT "${frecSimulada.resolucion_ant}" registrada.`);
+      }
     }
 
     setFormFrecuencia({
@@ -344,8 +394,67 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       destino: '',
       hora_salida: '08:00',
       precio_base: '4.50',
-      tipo_servicio: 'DIRECTO'
+      tipo_servicio: 'DIRECTO',
+      paradas_intermedias: '',
+      es_destacada: false,
+      patrocinio_inicio: '',
+      patrocinio_fin: ''
     });
+  };
+
+  // Cargar Frecuencia para Edición
+  const handleEditarFrecuenciaClick = (frec) => {
+    setFrecuenciaEditandoId(frec.id);
+    setFormFrecuencia({
+      cooperativa_id: frec.cooperativa_id || (isGerente ? coopId : 1),
+      resolucion_ant: frec.resolucion_ant || '',
+      origen: frec.origen || 'Ambato',
+      destino: frec.destino || '',
+      hora_salida: frec.hora_salida ? frec.hora_salida.substring(0, 5) : '08:00',
+      precio_base: frec.precio_base ? String(frec.precio_base) : '4.50',
+      tipo_servicio: frec.tipo_servicio || 'DIRECTO',
+      paradas_intermedias: Array.isArray(frec.paradas_intermedias) ? frec.paradas_intermedias.join(', ') : (frec.paradas_intermedias || ''),
+      es_destacada: Boolean(frec.es_destacada),
+      patrocinio_inicio: frec.patrocinio_inicio ? new Date(frec.patrocinio_inicio).toISOString().slice(0, 16) : '',
+      patrocinio_fin: frec.patrocinio_fin ? new Date(frec.patrocinio_fin).toISOString().slice(0, 16) : ''
+    });
+    window.scrollTo({ top: 380, behavior: 'smooth' });
+  };
+
+  // Cancelar Edición
+  const handleCancelarEdicionFrecuencia = () => {
+    setFrecuenciaEditandoId(null);
+    setFormFrecuencia({
+      cooperativa_id: isGerente ? Number(coopId) : 1,
+      resolucion_ant: '',
+      origen: 'Ambato',
+      destino: '',
+      hora_salida: '08:00',
+      precio_base: '4.50',
+      tipo_servicio: 'DIRECTO',
+      paradas_intermedias: '',
+      es_destacada: false,
+      patrocinio_inicio: '',
+      patrocinio_fin: ''
+    });
+  };
+
+  // Toggle rápido o Cancelación de Emergencia de Patrocinio
+  const handleToggleDestacada = async (frecId, nuevoEstado) => {
+    try {
+      const resp = await fetch(`${API_URL}/admin/frecuencias/${frecId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ es_destacada: nuevoEstado })
+      });
+      if (resp.ok) {
+        setFrecuencias(prev => prev.map(f => f.id === frecId ? { ...f, es_destacada: nuevoEstado } : f));
+        mostrarAlerta(nuevoEstado ? '⭐ Ruta marcada como destacada con éxito.' : '🚫 Patrocinio cancelado de inmediato.');
+      }
+    } catch {
+      setFrecuencias(prev => prev.map(f => f.id === frecId ? { ...f, es_destacada: nuevoEstado } : f));
+      mostrarAlerta(nuevoEstado ? '⭐ Ruta destacada en modo local.' : '🚫 Patrocinio cancelado de inmediato (local).');
+    }
   };
 
   // Eliminar Frecuencia
@@ -820,8 +929,14 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           <div style={styles.splitLayout}>
             {/* Formulario de Frecuencia */}
             <div style={styles.panelForm}>
-              <h2 style={styles.panelTitle}>Registrar Frecuencia ANT</h2>
-              <p style={styles.panelSubtitle}>Resolución oficial emitida por la Agencia Nacional de Tránsito.</p>
+              <h2 style={styles.panelTitle}>
+                {frecuenciaEditandoId ? '✏️ Editar Frecuencia Oficial' : 'Registrar Frecuencia ANT'}
+              </h2>
+              <p style={styles.panelSubtitle}>
+                {frecuenciaEditandoId
+                  ? 'Modifique datos operacionales, paradas o vigencia de patrocinio.'
+                  : 'Resolución oficial emitida por la Agencia Nacional de Tránsito.'}
+              </p>
 
               <form onSubmit={handleGuardarFrecuencia} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
@@ -924,10 +1039,71 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   </select>
                 </div>
 
+                {formFrecuencia.tipo_servicio === 'PARADAS' && (
+                  <div>
+                    <label style={styles.formLabel}>Paradas Intermedias (separadas por coma)</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Latacunga, Salcedo, Machachi"
+                      value={formFrecuencia.paradas_intermedias}
+                      onChange={(e) => setFormFrecuencia({ ...formFrecuencia, paradas_intermedias: e.target.value })}
+                      style={styles.formInput}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: '#FEF3C7', padding: '0.75rem', borderRadius: '8px', border: '1px solid #FDE68A' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <input
+                      type="checkbox"
+                      id="checkFrecDestacada"
+                      checked={formFrecuencia.es_destacada}
+                      onChange={(e) => setFormFrecuencia({ ...formFrecuencia, es_destacada: e.target.checked })}
+                      style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#D97706' }}
+                    />
+                    <label htmlFor="checkFrecDestacada" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#92400E', cursor: 'pointer', margin: 0 }}>
+                      ⭐ Frecuencia Destacada / Patrocinada (Prioridad en Búsqueda - VENT-14)
+                    </label>
+                  </div>
+
+                  {formFrecuencia.es_destacada && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.25rem', paddingTop: '0.5rem', borderTop: '1px dashed #FCD34D' }}>
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#92400E', display: 'block', marginBottom: '2px' }}>Inicio Patrocinio (Opcional)</label>
+                        <input
+                          type="datetime-local"
+                          value={formFrecuencia.patrocinio_inicio}
+                          onChange={(e) => setFormFrecuencia({ ...formFrecuencia, patrocinio_inicio: e.target.value })}
+                          style={{ ...styles.formInput, padding: '4px 6px', fontSize: '0.78rem' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#92400E', display: 'block', marginBottom: '2px' }}>Fin / Expiración (Opcional)</label>
+                        <input
+                          type="datetime-local"
+                          value={formFrecuencia.patrocinio_fin}
+                          onChange={(e) => setFormFrecuencia({ ...formFrecuencia, patrocinio_fin: e.target.value })}
+                          style={{ ...styles.formInput, padding: '4px 6px', fontSize: '0.78rem' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <button type="submit" style={styles.btnPrimary}>
                   <Route size={18} />
-                  <span>Registrar Frecuencia Oficial</span>
+                  <span>{frecuenciaEditandoId ? 'Guardar Cambios de Frecuencia' : 'Registrar Frecuencia Oficial'}</span>
                 </button>
+
+                {frecuenciaEditandoId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelarEdicionFrecuencia}
+                    style={{ ...styles.btnSecondary, width: '100%', justifyContent: 'center' }}
+                  >
+                    Cancelar Edición
+                  </button>
+                )}
               </form>
             </div>
 
@@ -954,7 +1130,62 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                       <tr key={frec.id} style={styles.tr}>
                         <td style={styles.td}><code>{frec.resolucion_ant}</code></td>
                         <td style={styles.td}><strong>{frec.cooperativa_nombre || (isGerente ? coopAsignadaNombre : 'Cooperativa')}</strong></td>
-                        <td style={styles.td}>{frec.origen} ➔ {frec.destino}</td>
+                        <td style={styles.td}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span>{frec.origen} ➔ {frec.destino}</span>
+                            {frec.es_destacada ? (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '0.7rem', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>
+                                  ⭐ Destacada
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleDestacada(frec.id, false)}
+                                  title="Cancelar patrocinio inmediatamente ante contingencia"
+                                  style={{
+                                    background: '#FEF2F2',
+                                    border: '1px solid #FECACA',
+                                    color: '#DC2626',
+                                    fontSize: '0.65rem',
+                                    padding: '1px 5px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  Cancelar Patrocinio
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDestacada(frec.id, true)}
+                                title="Activar patrocinio rápido"
+                                style={{
+                                  background: '#F8FAFC',
+                                  border: '1px solid #E2E8F0',
+                                  color: '#64748B',
+                                  fontSize: '0.65rem',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ☆ Destacar
+                              </button>
+                            )}
+                          </div>
+                          {Array.isArray(frec.paradas_intermedias) && frec.paradas_intermedias.length > 0 && (
+                            <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+                              Paradas: {frec.paradas_intermedias.join(' ➔ ')}
+                            </div>
+                          )}
+                          {frec.patrocinio_fin && (
+                            <div style={{ fontSize: '0.68rem', color: '#B45309', marginTop: '1px' }}>
+                              Vence: {new Date(frec.patrocinio_fin).toLocaleDateString()} {new Date(frec.patrocinio_fin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </td>
                         <td style={styles.td}>{frec.hora_salida}</td>
                         <td style={styles.td}><strong style={{ color: '#059669' }}>${Number(frec.precio_base).toFixed(2)}</strong></td>
                         <td style={styles.td}>
@@ -963,20 +1194,36 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                           </span>
                         </td>
                         <td style={{ ...styles.td, textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleEliminarFrecuencia(frec.id, frec.resolucion_ant)}
-                            title="Eliminar frecuencia"
-                            style={{
-                              background: '#FEF2F2',
-                              border: '1px solid #FECACA',
-                              color: '#DC2626',
-                              borderRadius: '6px',
-                              padding: '4px 8px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                            <button
+                              onClick={() => handleEditarFrecuenciaClick(frec)}
+                              title="Editar frecuencia oficial"
+                              style={{
+                                background: '#EFF6FF',
+                                border: '1px solid #BFDBFE',
+                                color: '#2563EB',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleEliminarFrecuencia(frec.id, frec.resolucion_ant)}
+                              title="Eliminar frecuencia"
+                              style={{
+                                background: '#FEF2F2',
+                                border: '1px solid #FECACA',
+                                color: '#DC2626',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

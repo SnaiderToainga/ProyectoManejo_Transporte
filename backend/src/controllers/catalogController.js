@@ -15,10 +15,13 @@ exports.getCooperativas = async (req, res) => {
 exports.getFrecuencias = async (req, res) => {
   try {
     const query = `
-      SELECT f.*, c.nombre as cooperativa_nombre, c.color_distintivo
+      SELECT f.*,
+             (f.es_destacada = true AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) AS patrocinio_activo,
+             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM frecuencias f
       JOIN cooperativas c ON f.cooperativa_id = c.id
       WHERE f.activo = true
+      ORDER BY (f.es_destacada = true AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) DESC, f.id ASC
     `;
     const result = await db.query(query);
     res.json(result.rows);
@@ -62,14 +65,17 @@ exports.getViajesProgramados = async (req, res) => {
     const query = `
       SELECT pv.id as programacion_id, pv.fecha_viaje, pv.hora_salida_programada, pv.estado,
              f.origen, f.destino, f.precio_base, f.resolucion_ant, f.tipo_servicio,
+             (f.es_destacada = true AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) AS es_destacada,
+             f.patrocinio_inicio, f.patrocinio_fin,
+             f.paradas_intermedias,
              b.numero_disco, b.placa, b.capacidad, b.tiene_bano_posterior,
-             c.nombre as cooperativa_nombre
+             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM programacion_viajes pv
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id
       JOIN cooperativas c ON f.cooperativa_id = c.id
       WHERE pv.fecha_viaje = $1
-      ORDER BY pv.hora_salida_programada ASC
+      ORDER BY (f.es_destacada = true AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) DESC, pv.hora_salida_programada ASC
     `;
     const result = await db.query(query, [fecha]);
     res.json(result.rows);

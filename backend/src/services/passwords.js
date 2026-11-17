@@ -9,7 +9,13 @@ async function hashPassword(password) {
 
 async function verifyPassword(password, stored) {
   if (!stored || stored === 'invitado_sin_password') return false;
-  if (!stored.startsWith('scrypt:')) return stored === password || stored === `hash_${password}`;
+  if (!stored.startsWith('scrypt:')) {
+    const cleanPwd = String(password).trim();
+    const normalize = s => s.replace(/^hash_/, '').replace(/_/g, '').toLowerCase();
+    return stored === cleanPwd || 
+           stored === `hash_${cleanPwd}` || 
+           normalize(stored) === normalize(cleanPwd);
+  }
   const [, salt, hash] = stored.split(':');
   if (!/^[a-f0-9]{32}$/.test(salt || '') || !/^[a-f0-9]{128}$/.test(hash || '')) return false;
   return timingSafeEqual(await derive(password, salt, 64), Buffer.from(hash, 'hex'));

@@ -32,6 +32,7 @@ export default function SearchTrips({ onChoose }) {
           }));
           matching = matching.filter((_, i) => availability[i]);
         }
+        matching.sort((a, b) => (b.es_destacada ? 1 : 0) - (a.es_destacada ? 1 : 0));
         if (!controller.signal.aborted) setTrips(matching);
       } catch (err) { if (!controller.signal.aborted) { setTrips([]); setError(err.message); } }
       finally { if (!controller.signal.aborted) setLoading(false); }
@@ -69,10 +70,41 @@ export default function SearchTrips({ onChoose }) {
       {error ? <div className="notice error" role="alert"><h3>No pudimos mostrar los viajes</h3><p>{error}</p><button className="button secondary" onClick={() => setQuery({ ...query })}>Reintentar</button>{!isDemo && <a className="text-link" href="?demo=1">Explorar una demostración</a>}</div>
         : loading ? <div className="empty-state">Buscando tu próximo destino…</div>
           : !trips.length ? <div className="empty-state"><BusFront size={32} /><h3>No hay viajes con estos filtros</h3><p>Prueba otra fecha, ruta u horario.</p><button className="button secondary" onClick={() => { const next = initialFilters(); next.fecha = filters.fecha; setFilters(next); setQuery(next); }}>Limpiar filtros</button></div>
-            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => <article className="trip-card" key={trip.programacion_id}>
-              <div className="operator"><span className="operator-icon"><BusFront size={23} /></span><div><h3>{trip.cooperativa_nombre}</h3><span className="muted">Unidad {trip.numero_disco} · {trip.capacidad} asientos</span></div></div>
+            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => <article className="trip-card" key={trip.programacion_id} style={trip.es_destacada ? { border: '2px solid #F59E0B', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.15)' } : undefined}>
+              <div className="operator">
+                {trip.logo_url ? (
+                  <img
+                    src={trip.logo_url}
+                    alt={trip.cooperativa_nombre}
+                    style={{ width: 36, height: 36, borderRadius: '6px', objectFit: 'contain', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '2px' }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : (
+                  <span className="operator-icon"><BusFront size={23} /></span>
+                )}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <h3>{trip.cooperativa_nombre}</h3>
+                    {trip.es_destacada && (
+                      <span style={{ fontSize: '0.75rem', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                        ⭐ Ruta Destacada
+                      </span>
+                    )}
+                  </div>
+                  <span className="muted">Unidad {trip.numero_disco} · {trip.capacidad} asientos</span>
+                </div>
+              </div>
               <div className="trip-route"><strong>{shortTime(trip.hora_salida_programada)}</strong><span>{trip.origen}</span><ArrowRight size={22} className="route-arrow" /><span>{trip.destino}</span></div>
-              <div className="trip-tags"><span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span><span> Servicio: {trip.tipo_servicio || 'No registrado'}</span><span>{trip.capacidad} asientos</span><span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span><span>Normal / VIP</span></div>
+              <div className="trip-tags">
+                <span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span>
+                <span> Servicio: {trip.tipo_servicio || 'No registrado'}</span>
+                {Array.isArray(trip.paradas_intermedias) && trip.paradas_intermedias.length > 0 && (
+                  <span> 📍 Paradas: {trip.paradas_intermedias.join(' ➔ ')}</span>
+                )}
+                <span>{trip.capacidad} asientos</span>
+                <span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span>
+                <span>Normal / VIP</span>
+              </div>
               <div className="trip-price"><span className="muted">Tarifa base</span><strong>{money(trip.precio_base)}</strong><button className="button primary" onClick={() => onChoose(trip, query.categoria)}>Elegir asientos <ArrowRight size={16} /></button></div>
             </article>)}</div></>}
     </section>
