@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { hashPassword, verifyPassword } = require('../services/passwords');
+const { generarEstructuraCompensada } = require('../services/seatTemplateService');
 
 // ==========================================
 // 1. AUTENTICACIÓN Y ROLES
@@ -272,7 +273,11 @@ exports.crearBus = async (req, res) => {
     placa,
     capacidad,
     tiene_bano_posterior,
-    estado = 'OPERATIVO'
+    estado = 'OPERATIVO',
+    columnas = 4,
+    pisos = 1,
+    celdasBloqueadas = [],
+    celdasBano = []
   } = req.body;
 
   if (!cooperativa_id || !numero_disco || !placa || !capacidad) {
@@ -280,16 +285,30 @@ exports.crearBus = async (req, res) => {
   }
 
   const numCapacidad = parseInt(capacidad, 10);
-  if (numCapacidad !== 40 && numCapacidad !== 41) {
-    return res.status(400).json({ error: 'La capacidad física debe ser exactamente de 40 o 41 asientos' });
+  if (isNaN(numCapacidad) || numCapacidad < 12 || numCapacidad > 65) {
+    return res.status(400).json({ error: 'La capacidad física debe ser un valor numérico entre 12 y 65 asientos (BUS-04).' });
   }
 
-  const tieneBano = tiene_bano_posterior !== undefined ? Boolean(tiene_bano_posterior) : (numCapacidad === 40);
+  const tieneBano = tiene_bano_posterior !== undefined ? Boolean(tiene_bano_posterior) : (celdasBano.length > 0 || numCapacidad === 40);
+
+  let estructura;
+  try {
+    estructura = generarEstructuraCompensada({
+      capacidad: numCapacidad,
+      columnas: parseInt(columnas, 10) || 4,
+      pisos: parseInt(pisos, 10) || 1,
+      celdasBloqueadas: Array.isArray(celdasBloqueadas) ? celdasBloqueadas : [],
+      celdasBano: Array.isArray(celdasBano) ? celdasBano : []
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 
   const client = await db.pool.connect();
 
   try {
     await client.query('BEGIN');
+    await client.query('ALTER TABLE buses DROP CONSTRAINT IF EXISTS buses_capacidad_check');
 
     // 1. Insertar el bus
     const insertBus = `
@@ -308,25 +327,73 @@ exports.crearBus = async (req, res) => {
 
     const nuevoBus = busRes.rows[0];
 
-    // 2. Loop atómico generador de los 40 o 41 asientos
-    for (let i = 1; i <= numCapacidad; i++) {
-      const categoria = i <= 4 ? 'VIP' : 'NORMAL';
-      const fila = Math.floor((i - 1) / 4) + 1;
-      const columna = ((i - 1) % 4) + 1;
-
+    // 2. Insertar asientos según la estructura matricial compensada (BUS-11 al BUS-20)
+    for (const a of estructura.asientos) {
       await client.query(
         `INSERT INTO asientos (bus_id, numero_asiento, fila, columna, categoria)
          VALUES ($1, $2, $3, $4, $5)`,
-        [nuevoBus.id, i, fila, columna, categoria]
+        [nuevoBus.id, a.numero_asiento, a.fila, a.columna, a.categoria]
       );
     }
 
     await client.query('COMMIT');
 
     res.status(201).json({
-      mensaje: `Bus #${nuevoBus.numero_disco} registrado con éxito y sus ${numCapacidad} asientos fueron generados en la base de datos.`,
+      mensaje: `Bus #${nuevoBus.numero_disco} registrado con éxito y sus ${numCapacidad} asientos fueron generados con estructura personalizada.`,
       bus: nuevoBus,
-      total_asientos_generados: numCapacidad
+      estructura_generada: estructura,
+      total_asientos_generados: estructura.asientos.length
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+};
+
+// Vista previa de plantilla con compensación automática al final (CR-09)
+exports.generarVistaPreviaPlantilla = (req, res) => {
+  try {
+    const resultado = generarEstructuraCompensada(req.body || {});
+    res.json(resultado);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// Asignar o actualizar plantilla matricial a un bus existente (BUS-18, BUS-19)
+exports.asignarPlantillaABus = async (req, res) => {
+  const { id } = req.params;
+  let estructura;
+  try {
+    estructura = generarEstructuraCompensada(req.body || {});
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE buses DROP CONSTRAINT IF EXISTS buses_capacidad_check');
+    await client.query(
+      'UPDATE buses SET capacidad = $1, tiene_bano_posterior = $2 WHERE id = $3',
+      [estructura.capacidad_total, (req.body.celdasBano || []).length > 0, id]
+    );
+    await client.query('DELETE FROM asientos WHERE bus_id = $1', [id]);
+
+    for (const a of estructura.asientos) {
+      await client.query(
+        `INSERT INTO asientos (bus_id, numero_asiento, fila, columna, categoria)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id, a.numero_asiento, a.fila, a.columna, a.categoria]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      mensaje: `Estructura de ${estructura.capacidad_total} asientos asignada exitosamente al bus #${id}.`,
+      estructura
     });
   } catch (error) {
     await client.query('ROLLBACK');

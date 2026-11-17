@@ -16,11 +16,13 @@ router.delete('/cooperativas/:id', verifyCooperativaOwnership, adminController.e
 router.get('/usuarios', adminController.getUsuarios);
 router.post('/usuarios', adminController.crearUsuario);
 
-// 4. Flota de buses (con loop automático de 40/41 asientos)
+// 4. Flota de buses y Plantillas Matriciales de Asientos (CR-09)
 router.get('/buses', adminController.getBuses);
 router.post('/buses', adminController.crearBus);
 router.put('/buses/:id', adminController.actualizarBus);
 router.delete('/buses/:id', adminController.eliminarBus);
+router.post('/plantillas/preview', adminController.generarVistaPreviaPlantilla);
+router.post('/buses/:id/plantilla', adminController.asignarPlantillaABus);
 
 // 5. Frecuencias oficiales ANT
 router.get('/frecuencias', adminController.getFrecuencias);
