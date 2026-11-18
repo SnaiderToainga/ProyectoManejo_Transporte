@@ -132,6 +132,8 @@ export const mockFrecuencias = [
     hora_salida: "07:00:00",
     precio_base: 4.50,
     tipo_servicio: "DIRECTO",
+    paradas_intermedias: [],
+    es_destacada: true,
     activo: true
   },
   {
@@ -142,7 +144,9 @@ export const mockFrecuencias = [
     destino: "Quito (Carcelén)",
     hora_salida: "08:30:00",
     precio_base: 5.00,
-    tipo_servicio: "DIRECTO",
+    tipo_servicio: "PARADAS",
+    paradas_intermedias: ["Latacunga", "Machachi"],
+    es_destacada: false,
     activo: true
   },
   {
@@ -154,6 +158,21 @@ export const mockFrecuencias = [
     hora_salida: "06:15:00",
     precio_base: 1.25,
     tipo_servicio: "PARADAS",
+    paradas_intermedias: ["El Pingue", "Totoras"],
+    es_destacada: false,
+    activo: true
+  },
+  {
+    id: 4,
+    cooperativa_id: 1,
+    resolucion_ant: "ANT-RES-2026-099",
+    origen: "Quito",
+    destino: "Loja",
+    hora_salida: "11:30:00",
+    precio_base: 20.00,
+    tipo_servicio: "PARADAS",
+    paradas_intermedias: ["Latacunga", "Ambato", "Riobamba", "Cuenca"],
+    es_destacada: true,
     activo: true
   }
 ];

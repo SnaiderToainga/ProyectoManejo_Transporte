@@ -2,7 +2,7 @@ import RouteMap from '../../components/RouteMap.jsx';
 import { useEffect, useState } from 'react';
 import { ArrowRight, BusFront, CalendarDays, MapPin, Search, SlidersHorizontal } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
-import { matchesTrip, money, shortTime, today, travelDate } from '../../lib/format.js';
+import { calculateSegmentPrice, matchesTrip, money, resolveTripSegment, shortTime, today, travelDate } from '../../lib/format.js';
 
 const initialFilters = () => ({ fecha: today(), origen: '', destino: '', cooperativa: '', desde: '', hasta: '', categoria: '' });
 
@@ -11,6 +11,7 @@ export default function SearchTrips({ onChoose }) {
   const [query, setQuery] = useState(initialFilters);
   const [trips, setTrips] = useState([]);
   const [cooperatives, setCooperatives] = useState([]);
+  const [customSegments, setCustomSegments] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -21,6 +22,7 @@ export default function SearchTrips({ onChoose }) {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError('');
+    setCustomSegments({});
     (async () => {
       try {
         const all = await api.trips(query.fecha, controller.signal);
@@ -32,6 +34,7 @@ export default function SearchTrips({ onChoose }) {
           }));
           matching = matching.filter((_, i) => availability[i]);
         }
+        matching.sort((a, b) => (b.es_destacada ? 1 : 0) - (a.es_destacada ? 1 : 0));
         if (!controller.signal.aborted) setTrips(matching);
       } catch (err) { if (!controller.signal.aborted) { setTrips([]); setError(err.message); } }
       finally { if (!controller.signal.aborted) setLoading(false); }
@@ -43,6 +46,18 @@ export default function SearchTrips({ onChoose }) {
     event.preventDefault();
     if (filters.desde && filters.hasta && filters.desde > filters.hasta) { setError('La hora inicial debe ser anterior a la hora final.'); return; }
     setQuery({ ...filters });
+  };
+
+  const handleSegmentChange = (progId, totalLen, field, val) => {
+    const numVal = Number(val);
+    setCustomSegments(prev => {
+      const current = prev[progId] || { startIdx: 0, endIdx: totalLen - 1 };
+      if (field === 'startIdx') {
+        const nextEnd = current.endIdx <= numVal ? Math.min(totalLen - 1, numVal + 1) : current.endIdx;
+        return { ...prev, [progId]: { startIdx: numVal, endIdx: nextEnd } };
+      }
+      return { ...prev, [progId]: { ...current, endIdx: Math.max(current.startIdx + 1, numVal) } };
+    });
   };
   return <>
     <section className="hero">
@@ -69,12 +84,134 @@ export default function SearchTrips({ onChoose }) {
       {error ? <div className="notice error" role="alert"><h3>No pudimos mostrar los viajes</h3><p>{error}</p><button className="button secondary" onClick={() => setQuery({ ...query })}>Reintentar</button>{!isDemo && <a className="text-link" href="?demo=1">Explorar una demostración</a>}</div>
         : loading ? <div className="empty-state">Buscando tu próximo destino…</div>
           : !trips.length ? <div className="empty-state"><BusFront size={32} /><h3>No hay viajes con estos filtros</h3><p>Prueba otra fecha, ruta u horario.</p><button className="button secondary" onClick={() => { const next = initialFilters(); next.fecha = filters.fecha; setFilters(next); setQuery(next); }}>Limpiar filtros</button></div>
-            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => <article className="trip-card" key={trip.programacion_id}>
-              <div className="operator"><span className="operator-icon"><BusFront size={23} /></span><div><h3>{trip.cooperativa_nombre}</h3><span className="muted">Unidad {trip.numero_disco} · {trip.capacidad} asientos</span></div></div>
-              <div className="trip-route"><strong>{shortTime(trip.hora_salida_programada)}</strong><span>{trip.origen}</span><ArrowRight size={22} className="route-arrow" /><span>{trip.destino}</span></div>
-              <div className="trip-tags"><span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span><span> Servicio: {trip.tipo_servicio || 'No registrado'}</span><span>{trip.capacidad} asientos</span><span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span><span>Normal / VIP</span></div>
-              <div className="trip-price"><span className="muted">Tarifa base</span><strong>{money(trip.precio_base)}</strong><button className="button primary" onClick={() => onChoose(trip, query.categoria)}>Elegir asientos <ArrowRight size={16} /></button></div>
-            </article>)}</div></>}
+            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => {
+              const seg = resolveTripSegment(trip, query.origen, query.destino);
+              const { itinerary, totalSegments } = seg;
+              const custom = customSegments[trip.programacion_id];
+              const startIdx = custom?.startIdx !== undefined ? custom.startIdx : seg.startIdx;
+              const endIdx = custom?.endIdx !== undefined && custom.endIdx > startIdx ? custom.endIdx : Math.max(startIdx + 1, seg.endIdx);
+              const esTramo = startIdx > 0 || endIdx < itinerary.length - 1;
+              const tramoOrigen = itinerary[startIdx] || trip.origen;
+              const tramoDestino = itinerary[endIdx] || trip.destino;
+              const precioFinal = esTramo
+                ? calculateSegmentPrice(trip.precio_base, totalSegments, endIdx - startIdx)
+                : Number(trip.precio_base);
+
+              return (
+                <article className="trip-card" key={trip.programacion_id} style={trip.es_destacada ? { border: '2px solid #F59E0B', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.15)' } : undefined}>
+                  <div className="operator">
+                    {trip.logo_url ? (
+                      <img
+                        src={trip.logo_url}
+                        alt={`Logo ${trip.cooperativa_nombre}`}
+                        style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'cover', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '2px', flexShrink: 0 }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div
+                        aria-label={`Emblema ${trip.cooperativa_nombre}`}
+                        style={{ width: 48, height: 48, borderRadius: '10px', background: trip.color_distintivo || '#1E40AF', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1rem', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.12)' }}
+                      >
+                        {String(trip.cooperativa_nombre || 'CO').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h3>{trip.cooperativa_nombre}</h3>
+                        {trip.es_destacada && (
+                          <span style={{ fontSize: '0.75rem', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                            ⭐ Ruta Destacada
+                          </span>
+                        )}
+                        {esTramo && (
+                          <span style={{ fontSize: '0.72rem', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                            🛣️ Tramo en ruta {trip.origen} ➔ {trip.destino}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', background: '#F1F5F9', border: '1px solid #CBD5E1', padding: '2px 10px', borderRadius: '6px' }}>
+                          🚌 UNIDAD #{trip.numero_disco}
+                        </span>
+                        <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="trip-route">
+                    <strong>{shortTime(trip.hora_salida_programada)}</strong>
+                    <span>{tramoOrigen}</span>
+                    <ArrowRight size={22} className="route-arrow" />
+                    <span>{tramoDestino}</span>
+                  </div>
+                  {itinerary.length > 2 && (
+                    <div style={{ gridColumn: '1 / -1', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '0.82rem' }}>
+                      <strong style={{ color: '#334155' }}>📍 Seleccionar Tramo Intermedio:</strong>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', margin: 0 }}>
+                        <span style={{ color: '#64748B' }}>Subida:</span>
+                        <select
+                          value={startIdx}
+                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'startIdx', e.target.value)}
+                          style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', fontSize: '0.82rem' }}
+                        >
+                          {itinerary.slice(0, -1).map((stop, idx) => (
+                            <option key={`start-${idx}`} value={idx}>{stop}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <span style={{ color: '#94A3B8' }}>➔</span>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', margin: 0 }}>
+                        <span style={{ color: '#64748B' }}>Bajada:</span>
+                        <select
+                          value={endIdx}
+                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'endIdx', e.target.value)}
+                          style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', fontSize: '0.82rem' }}
+                        >
+                          {itinerary.map((stop, idx) => idx > startIdx ? (
+                            <option key={`end-${idx}`} value={idx}>{stop}</option>
+                          ) : null)}
+                        </select>
+                      </label>
+                      <span style={{ color: '#64748B', fontSize: '0.76rem', marginLeft: 'auto' }}>
+                        Itinerario completo: {itinerary.join(' ➔ ')}
+                      </span>
+                    </div>
+                  )}
+                  <div className="trip-tags">
+                    <span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span>
+                    <span> Servicio: {trip.tipo_servicio || 'No registrado'}</span>
+                    {Array.isArray(trip.paradas_intermedias) && trip.paradas_intermedias.length > 0 && (
+                      <span> 📍 Paradas: {trip.paradas_intermedias.join(' ➔ ')}</span>
+                    )}
+                    <span>{trip.capacidad} asientos</span>
+                    <span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span>
+                    <span>Normal / VIP</span>
+                  </div>
+                  <div className="trip-price">
+                    <span className="muted">{esTramo ? 'Tarifa proporcional tramo' : 'Tarifa base'}</span>
+                    <strong>{money(precioFinal)}</strong>
+                    {esTramo && (
+                      <span style={{ fontSize: '0.74rem', color: '#64748B', textDecoration: 'line-through' }}>
+                        Ruta total: {money(trip.precio_base)}
+                      </span>
+                    )}
+                    <button
+                      className="button primary"
+                      onClick={() => onChoose({
+                        ...trip,
+                        origen: tramoOrigen,
+                        destino: tramoDestino,
+                        precio_base: precioFinal,
+                        ruta_completa_origen: trip.origen,
+                        ruta_completa_destino: trip.destino,
+                        es_tramo_intermedio: esTramo
+                      }, query.categoria)}
+                    >
+                      Elegir asientos <ArrowRight size={16} />
+                    </button>
+                  </div>
+                </article>
+              );
+            })}</div></>}
     </section>
     <div className="how-it-works">{[['01', 'Encuentra tu viaje', 'Compara rutas y horarios.'], ['02', 'Elige tu lugar', 'Un asiento a tu medida.'], ['03', 'Lleva tu boleto', 'Consulta y descarga tu PDF.']].map(([number, title, copy]) => <div key={number}><span>{number}</span><div><h3>{title}</h3><p>{copy}</p></div></div>)}</div>
   </>;

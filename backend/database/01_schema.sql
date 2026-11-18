@@ -27,6 +27,9 @@ CREATE TABLE cooperativas (
     nombre VARCHAR(120) NOT NULL UNIQUE,
     ruc VARCHAR(13) NOT NULL UNIQUE,
     color_distintivo VARCHAR(20) DEFAULT '#1E40AF',
+    logo_url TEXT,
+    telefono VARCHAR(30),
+    direccion TEXT,
     cuenta_bancaria VARCHAR(50),
     banco VARCHAR(50),
     activo BOOLEAN DEFAULT TRUE,
@@ -45,6 +48,10 @@ CREATE TABLE frecuencias (
     hora_salida TIME NOT NULL,
     precio_base NUMERIC(6, 2) NOT NULL CHECK (precio_base > 0),
     tipo_servicio VARCHAR(20) DEFAULT 'DIRECTO' CHECK (tipo_servicio IN ('DIRECTO', 'PARADAS')),
+    paradas_intermedias TEXT[] DEFAULT '{}',
+    es_destacada BOOLEAN DEFAULT FALSE,
+    patrocinio_inicio TIMESTAMP,
+    patrocinio_fin TIMESTAMP,
     activo BOOLEAN DEFAULT TRUE
 );
 

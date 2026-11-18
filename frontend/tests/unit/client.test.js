@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isAvailable, seatCategory, seatPosition, seatPrice, uniqueSeats } from '../../src/lib/seats.js';
-import { matchesTrip } from '../../src/lib/format.js';
+import { matchesTrip, resolveTripSegment } from '../../src/lib/format.js';
 import { passengerError, receiptError } from '../../src/lib/validation.js';
 import { demoApi } from '../../src/lib/demo.js';
 
@@ -44,11 +44,29 @@ test('los filtros combinan ruta sin tildes, cooperativa, horario y estado', () =
   assert.equal(matchesTrip({ ...trip, estado: 'CANCELADO' }, {}), false);
 });
 test('se validan pasajeros y comprobantes antes de enviar solicitudes', () => {
-  assert.equal(passengerError([{ nombre: 'Pasajero de prueba', cedula: '0102030405' }]), '');
+  assert.equal(passengerError([{ nombre: 'Pasajero de prueba', cedula: '1710034065' }]), '');
   assert.ok(passengerError([{ nombre: 'A', cedula: '123' }]));
-  assert.ok(passengerError([{ nombre: 'Uno', cedula: '0102030405' }, { nombre: 'Dos', cedula: '0102030405' }]));
+  assert.ok(passengerError([{ nombre: 'Uno', cedula: '1710034065' }, { nombre: 'Dos', cedula: '1710034065' }]));
   assert.equal(receiptError({ name: 'pago.pdf', type: 'application/pdf', size: 100 }), '');
   assert.ok(receiptError({ name: 'pago.exe', type: 'image/png', size: 100 }));
   assert.ok(receiptError({ name: 'pago.png', type: 'image/png', size: 5 * 1024 * 1024 + 1 }));
   assert.ok(receiptError({ name: 'pago.png', type: 'image/png', size: 0 }));
+});
+test('CR-05: permite buscar y calcular tarifa proporcional entre paradas intermedias (Latacunga - Cuenca en ruta Quito - Loja)', () => {
+  const trip = {
+    origen: 'Quito',
+    destino: 'Loja',
+    paradas_intermedias: ['Latacunga', 'Ambato', 'Riobamba', 'Cuenca'],
+    precio_base: '20.00',
+    cooperativa_nombre: 'Cooperativa de Transportes CITA',
+    hora_salida_programada: '07:00:00',
+    estado: 'PROGRAMADO'
+  };
+  assert.equal(matchesTrip(trip, { origen: 'Latacunga', destino: 'Cuenca' }), true);
+  assert.equal(matchesTrip(trip, { origen: 'Cuenca', destino: 'Latacunga' }), false);
+  const seg = resolveTripSegment(trip, 'Latacunga', 'Cuenca');
+  assert.equal(seg.esTramoIntermedio, true);
+  assert.equal(seg.tramoOrigen, 'Latacunga');
+  assert.equal(seg.tramoDestino, 'Cuenca');
+  assert.equal(seg.precioTramo, 12);
 });
