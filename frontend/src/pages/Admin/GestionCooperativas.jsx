@@ -29,8 +29,15 @@ import {
   mockFrecuencias
 } from './mockDataAdmin.js';
 
-const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const API_URL = (import.meta.env.VITE_API_URL || (isLocalHost ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
+const isLocalEnv = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1' || 
+  window.location.hostname.startsWith('192.168.') || 
+  window.location.hostname.startsWith('10.') || 
+  window.location.hostname.startsWith('172.') || 
+  import.meta.env.DEV
+);
+const API_URL = (import.meta.env.VITE_API_URL || (isLocalEnv ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
 
 export default function GestionCooperativas({ usuario: propUsuario, onLogout }) {
   // Detección robusta de sesión y rol
@@ -44,6 +51,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
   const userRole = (authUser?.rol || '').toUpperCase();
   const isGerente = userRole === 'ADMIN_COOP';
+  const isSuperAdmin = userRole === 'SUPERADMIN';
+  const esSuperAdmin = isSuperAdmin;
   const coopId = authUser?.cooperativa_id || null;
   const coopAsignadaNombre = authUser?.cooperativa_nombre || 'Sin cooperativa asignada';
 
@@ -541,18 +550,25 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   const handleGuardarUsuario = async (e) => {
     e.preventDefault();
     try {
+      const payload = {
+        ...formUsuario,
+        creador_rol: usuario?.rol,
+        creador_coop_id: usuario?.cooperativa_id,
+        cooperativa_id: isGerente ? usuario?.cooperativa_id : formUsuario.cooperativa_id
+      };
       const response = await fetch(`${API_URL}/admin/usuarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formUsuario)
+        body: JSON.stringify(payload)
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.usuario) {
         throw new Error(data?.error || 'No se pudo crear el usuario.');
       }
-      mostrarAlerta(`Usuario ${formUsuario.nombre} creado con rol ${formUsuario.rol}.`);
+      mostrarAlerta(`Usuario ${formUsuario.nombre} creado exitosamente con rol ${formUsuario.rol}.`);
       setModalUsuarioAbierto(false);
-      setFormUsuario({ nombre: '', correo: '', telefono: '', rol: 'ADMIN_COOP', cooperativa_id: 1, password: '' });
+      setFormUsuario({ nombre: '', correo: '', telefono: '', rol: 'OFICINISTA', cooperativa_id: isGerente ? usuario?.cooperativa_id : 1, password: '', bus_id: '' });
+      if (typeof cargarUsuarios === 'function') cargarUsuarios();
     } catch (error) {
       mostrarAlerta(error.message);
     }
@@ -1626,12 +1642,33 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   onChange={(e) => setFormUsuario({ ...formUsuario, rol: e.target.value })}
                   style={styles.formInput}
                 >
-                  <option value="ADMIN_COOP">Gerente / Administrador de Cooperativa</option>
+                  {esSuperAdmin && <option value="ADMIN_COOP">Gerente / Administrador de Cooperativa</option>}
                   <option value="OFICINISTA">Oficinista / Taquillero</option>
-                  <option value="SUPERADMIN">SuperAdministrador General</option>
+                  <option value="CHOFER">🚍 Chofer / Conductor de Unidad</option>
+                  {esSuperAdmin && <option value="SUPERADMIN">SuperAdministrador General</option>}
                 </select>
               </div>
-              {formUsuario.rol === 'ADMIN_COOP' && (
+              {formUsuario.rol === 'CHOFER' && (
+                <div>
+                  <label style={styles.formLabel}>Unidad / Bus Asignado (*)</label>
+                  <select
+                    required
+                    value={formUsuario.bus_id || ''}
+                    onChange={(e) => setFormUsuario({ ...formUsuario, bus_id: e.target.value })}
+                    style={styles.formInput}
+                  >
+                    <option value="">Selecciona la unidad que conducirá</option>
+                    {buses
+                      .filter(b => isGerente ? Number(b.cooperativa_id) === Number(coopId) : true)
+                      .map(b => (
+                        <option key={b.id} value={b.id}>
+                          Bus #{b.numero_disco} — Placa: {b.placa} ({b.capacidad} asientos)
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+              {esSuperAdmin && formUsuario.rol === 'ADMIN_COOP' && (
                 <label style={styles.formLabel}>Cooperativa asignada
                   <select
                     required

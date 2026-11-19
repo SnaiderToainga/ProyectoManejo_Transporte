@@ -15,9 +15,12 @@ exports.login = async (req, res) => {
 
   try {
     const result = await db.query(
-      `SELECT u.id, u.nombre, u.correo, u.telefono, u.rol, u.password_hash,
-              c.id AS cooperativa_id, c.nombre AS cooperativa_nombre
-       FROM usuarios u LEFT JOIN cooperativas c ON c.id = u.cooperativa_id
+      `SELECT u.id, u.nombre, u.correo, u.telefono, u.cedula, u.rol, u.password_hash, u.bus_id,
+              c.id AS cooperativa_id, c.nombre AS cooperativa_nombre,
+              b.numero_disco AS bus_disco, b.placa AS bus_placa
+       FROM usuarios u 
+       LEFT JOIN cooperativas c ON c.id = u.cooperativa_id
+       LEFT JOIN buses b ON b.id = u.bus_id
        WHERE LOWER(TRIM(u.correo)) = $1`,
       [correo.trim().toLowerCase()]
     );
@@ -29,8 +32,13 @@ exports.login = async (req, res) => {
     if (usuario.rol === 'ADMIN_COOP' && !usuario.cooperativa_id) {
       return res.status(403).json({ error: 'Tu cuenta aún no tiene una cooperativa asignada' });
     }
+    if (usuario.rol === 'CHOFER' && !usuario.bus_id) {
+      return res.status(403).json({ error: 'Esta cuenta de chofer no tiene una unidad de bus asignada' });
+    }
 
-    const redirectPath = usuario.rol === 'OFICINISTA' ? '/oficina' : '/admin';
+    let redirectPath = '/admin';
+    if (usuario.rol === 'OFICINISTA') redirectPath = '/oficina';
+    if (usuario.rol === 'CHOFER') redirectPath = '/chofer';
 
     res.json({
       mensaje: 'Inicio de sesión exitoso',
@@ -40,8 +48,12 @@ exports.login = async (req, res) => {
         correo: usuario.correo,
         rol: usuario.rol,
         telefono: usuario.telefono,
+        cedula: usuario.cedula,
         cooperativa_id: usuario.cooperativa_id,
-        cooperativa_nombre: usuario.cooperativa_nombre
+        cooperativa_nombre: usuario.cooperativa_nombre,
+        bus_id: usuario.bus_id,
+        bus_disco: usuario.bus_disco,
+        bus_placa: usuario.bus_placa
       },
       redirect: redirectPath
     });
@@ -197,10 +209,24 @@ exports.actualizarCooperativa = async (req, res) => {
 // ==========================================
 
 exports.getUsuarios = async (req, res) => {
+  const { cooperativa_id } = req.query;
   try {
-    const result = await db.query(
-      'SELECT id, nombre, correo, telefono, rol, creado_en FROM usuarios ORDER BY id DESC'
-    );
+    let query = `
+      SELECT u.id, u.nombre, u.correo, u.telefono, u.cedula, u.rol, u.creado_en, u.cooperativa_id, u.bus_id,
+             c.nombre AS cooperativa_nombre,
+             b.numero_disco AS bus_disco, b.placa AS bus_placa
+      FROM usuarios u
+      LEFT JOIN cooperativas c ON c.id = u.cooperativa_id
+      LEFT JOIN buses b ON b.id = u.bus_id
+    `;
+    const params = [];
+    if (cooperativa_id) {
+      query += ' WHERE u.cooperativa_id = $1';
+      params.push(Number(cooperativa_id));
+    }
+    query += ' ORDER BY u.id DESC';
+
+    const result = await db.query(query, params);
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -208,38 +234,65 @@ exports.getUsuarios = async (req, res) => {
 };
 
 exports.crearUsuario = async (req, res) => {
-  const { nombre, correo, telefono, rol, password, cooperativa_id } = req.body;
+  const { nombre, correo, telefono, cedula, rol, password, cooperativa_id, bus_id, creador_rol, creador_coop_id } = req.body;
 
   if (typeof nombre !== 'string' || !nombre.trim() || typeof correo !== 'string' || !correo.trim() || !rol) {
     return res.status(400).json({ error: 'Nombre, correo y rol son obligatorios' });
   }
 
-  const rolesPermitidos = ['ADMIN_COOP', 'OFICINISTA', 'SUPERADMIN'];
+  const rolesPermitidos = ['ADMIN_COOP', 'OFICINISTA', 'CHOFER', 'SUPERADMIN'];
   if (!rolesPermitidos.includes(rol)) {
     return res.status(400).json({ error: 'Rol no permitido para gestión administrativa' });
+  }
+
+  // Regla de Negocio del Estudiante (Joel): Solo el Gerente de la Cooperativa puede crear Choferes
+  if (rol === 'CHOFER') {
+    if (creador_rol && creador_rol !== 'ADMIN_COOP' && creador_rol !== 'SUPERADMIN') {
+      return res.status(403).json({ error: 'Solo el Gerente de la cooperativa puede crear choferes' });
+    }
+    if (!bus_id) {
+      return res.status(400).json({ error: 'Debes asignar un bus obligatoriamente al chofer' });
+    }
   }
 
   if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
     return res.status(400).json({ error: 'La contraseña debe tener entre 6 y 128 caracteres' });
   }
-  const coopId = rol === 'ADMIN_COOP' ? Number(cooperativa_id) : null;
-  if (rol === 'ADMIN_COOP' && (!Number.isInteger(coopId) || coopId < 1 || coopId > 2147483647)) {
+
+  let coopId = cooperativa_id ? Number(cooperativa_id) : (creador_coop_id ? Number(creador_coop_id) : null);
+  if ((rol === 'ADMIN_COOP' || rol === 'CHOFER' || rol === 'OFICINISTA') && (!Number.isInteger(coopId) || coopId < 1 || coopId > 2147483647)) {
     return res.status(400).json({ error: 'Selecciona una cooperativa válida' });
   }
+
+  // Validar que el bus pertenezca a la misma cooperativa del Gerente
+  let busAsignadoId = null;
+  if (bus_id) {
+    const busCheck = await db.query('SELECT id, cooperativa_id FROM buses WHERE id = $1', [bus_id]);
+    if (busCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'El bus asignado no existe' });
+    }
+    if (busCheck.rows[0].cooperativa_id !== coopId) {
+      return res.status(403).json({ error: 'El bus seleccionado no pertenece a la cooperativa del chofer' });
+    }
+    busAsignadoId = busCheck.rows[0].id;
+  }
+
   try {
     const passHash = await hashPassword(password);
     const query = `
-      INSERT INTO usuarios (nombre, correo, telefono, rol, password_hash, cooperativa_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, nombre, correo, telefono, rol, creado_en, cooperativa_id
+      INSERT INTO usuarios (nombre, correo, telefono, cedula, rol, password_hash, cooperativa_id, bus_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id, nombre, correo, telefono, cedula, rol, creado_en, cooperativa_id, bus_id
     `;
     const result = await db.query(query, [
       nombre.trim(),
       correo.trim().toLowerCase(),
       telefono || '',
+      cedula || '',
       rol,
       passHash,
-      coopId
+      coopId,
+      busAsignadoId
     ]);
 
     res.status(201).json({
@@ -247,7 +300,7 @@ exports.crearUsuario = async (req, res) => {
       usuario: result.rows[0]
     });
   } catch (error) {
-    if (error.code === '23503') return res.status(400).json({ error: 'La cooperativa seleccionada no existe' });
+    if (error.code === '23503') return res.status(400).json({ error: 'La cooperativa o bus seleccionado no existe' });
     if (error.code === '23505') return res.status(409).json({ error: 'El correo ya está registrado' });
     res.status(500).json({ error: error.message });
   }
