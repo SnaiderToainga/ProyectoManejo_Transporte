@@ -8,9 +8,10 @@ import HistorialCompras from './pages/Client/HistorialCompras.jsx';
 import Login from './pages/Admin/Login.jsx';
 import GestionCooperativas from './pages/Admin/GestionCooperativas.jsx';
 import OfficeDashboard from './pages/Office/OfficeDashboard';
+import ChoferPanel from './pages/Driver/ChoferPanel.jsx';
 import { recalledCode } from './lib/reservation.js';
 import { isDemo } from './lib/api.js';
-import { canAccessOffice } from './lib/authGuard.js';
+import { canAccessOffice, canAccessDriver } from './lib/authGuard.js';
 
 const isHistoryHash = hash => hash === '#mis-compras' || hash.startsWith('#mis-compras?');
 const historyTokenFromHash = () => isHistoryHash(window.location.hash)
@@ -54,6 +55,13 @@ export default function App() {
 
     if (path === '/admin' || hash === '#admin') return 'admin';
     if (path === '/login' || hash === '#login') return 'login';
+    if (path === '/chofer' || hash === '#chofer') {
+      if (!canAccessDriver(auth)) {
+        window.location.hash = 'login';
+        return 'login';
+      }
+      return 'chofer';
+    }
     if (path === '/oficina' || hash === '#oficina') {
       if (!canAccessOffice(auth)) {
         window.location.hash = 'login';
@@ -130,6 +138,13 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  const goChofer = () => {
+    setMenuOpen(false);
+    setPage('chofer');
+    window.location.hash = 'chofer';
+    window.scrollTo(0, 0);
+  };
+
   useEffect(() => {
     const change = () => {
       setMenuOpen(false);
@@ -145,6 +160,22 @@ export default function App() {
         setPage('admin');
       } else if (hash === '#login') {
         setPage('login');
+      } else if (hash === '#chofer') {
+        const storedUser = (() => {
+          try {
+            return JSON.parse(localStorage.getItem('transporte_auth'));
+          } catch {
+            return null;
+          }
+        })();
+        if (!canAccessDriver(storedUser)) {
+          setAuthError('Acceso restringido: Se requieren credenciales de Chofer o Administrador');
+          setPage('login');
+          window.location.hash = 'login';
+          return;
+        }
+        setAuthError('');
+        setPage('chofer');
       } else if (hash === '#oficina') {
         const storedUser = (() => {
           try {
@@ -228,6 +259,11 @@ export default function App() {
                 Taquilla / Oficina
               </button>
             )}
+            {usuario && (usuario.rol === 'CHOFER' || usuario.rol === 'SUPERADMIN') && (
+              <button className={`nav-link ${page === 'chofer' ? 'active' : ''}`} onClick={goChofer} style={{ fontWeight: 600 }}>
+                🚍 Cabina Chofer
+              </button>
+            )}
            <button
             className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
             onClick={() => {
@@ -260,7 +296,29 @@ export default function App() {
       </header>
 
       <main id="contenido" className="shell main-content">
-        {page === 'admin' ? (
+        {page === 'chofer' ? (
+          canAccessDriver(usuario) ? (
+            <ChoferPanel
+              usuario={usuario}
+              onVolverInicio={goSearch}
+              onLogout={() => {
+                localStorage.removeItem('transporte_auth');
+                setUsuario(null);
+                goLogin();
+              }}
+            />
+          ) : (
+            <Login
+              alertaSeguridad="Acceso restringido: Se requieren credenciales de Chofer o Administrador"
+              onLoginSuccess={(user) => {
+                setUsuario(user);
+                setAuthError('');
+                setPage('chofer');
+                window.location.hash = 'chofer';
+              }}
+            />
+          )
+        ) : page === 'admin' ? (
           <GestionCooperativas
             usuario={usuario}
             onLogout={() => {
@@ -277,6 +335,9 @@ export default function App() {
               if (ruta === '/oficina' || user?.rol === 'OFICINISTA') {
                 setPage('oficina');
                 window.location.hash = 'oficina';
+              } else if (ruta === '/chofer' || user?.rol === 'CHOFER') {
+                setPage('chofer');
+                window.location.hash = 'chofer';
               } else {
                 goAdmin();
               }

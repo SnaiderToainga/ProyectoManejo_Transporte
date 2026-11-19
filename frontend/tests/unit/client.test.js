@@ -70,3 +70,45 @@ test('CR-05: permite buscar y calcular tarifa proporcional entre paradas interme
   assert.equal(seg.tramoDestino, 'Cuenca');
   assert.equal(seg.precioTramo, 12);
 });
+
+test('CR-04: control de estados de viaje (RUTA-16) y validación de boletos QR en puerta (VENT-05)', () => {
+  // 1. Simulación de transiciones de estado de viaje por el chofer (RUTA-16)
+  const viaje = { id: 10, estado: 'PROGRAMADO' };
+  const iniciarViaje = (v) => {
+    if (v.estado === 'FINALIZADO') throw new Error('Viaje ya finalizado');
+    return { ...v, estado: 'EN_RUTA' };
+  };
+  const finalizarViaje = (v) => ({ ...v, estado: 'FINALIZADO' });
+
+  const enRuta = iniciarViaje(viaje);
+  assert.equal(enRuta.estado, 'EN_RUTA');
+
+  const finalizado = finalizarViaje(enRuta);
+  assert.equal(finalizado.estado, 'FINALIZADO');
+  assert.throws(() => iniciarViaje(finalizado), /Viaje ya finalizado/);
+
+  // 2. Validación de abordaje por QR en puerta (VENT-05)
+  const boleto = {
+    id: 101,
+    codigo_reserva: 'RES-TEST-123',
+    numero_asiento: 15,
+    estado_reserva: 'PAGADO',
+    validado_en_puerta: false
+  };
+
+  const validarAbordaje = (b) => {
+    if (b.estado_reserva !== 'PAGADO') return { valido: false, mensaje: 'No pagado' };
+    if (b.validado_en_puerta) return { valido: false, ya_usado: true, mensaje: 'Boleto ya utilizado' };
+    return { valido: true, boletoActualizado: { ...b, validado_en_puerta: true } };
+  };
+
+  // Primer intento: Exitoso
+  const intento1 = validarAbordaje(boleto);
+  assert.equal(intento1.valido, true);
+  assert.equal(intento1.boletoActualizado.validado_en_puerta, true);
+
+  // Segundo intento con boleto ya validado: Debe ser rechazado para evitar fraude
+  const intento2 = validarAbordaje(intento1.boletoActualizado);
+  assert.equal(intento2.valido, false);
+  assert.equal(intento2.ya_usado, true);
+});

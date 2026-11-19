@@ -1,8 +1,15 @@
 import { useState } from 'react';
 import { BusFront, Lock, Mail, ShieldAlert, ArrowRight, UserCheck } from 'lucide-react';
 
-const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const API_URL = (import.meta.env.VITE_API_URL || (isLocalHost ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
+const isLocalEnv = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1' || 
+  window.location.hostname.startsWith('192.168.') || 
+  window.location.hostname.startsWith('10.') || 
+  window.location.hostname.startsWith('172.') || 
+  import.meta.env.DEV
+);
+const API_URL = (import.meta.env.VITE_API_URL || (isLocalEnv ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
 
 export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [correo, setCorreo] = useState('');
@@ -15,12 +22,13 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
     { rol: 'SUPERADMIN', correo: 'admin@transporteuta.com', label: 'SuperAdmin General' },
     { rol: 'ADMIN_COOP', correo: 'gerente@cita.com', label: 'Gerente CITA' },
     { rol: 'ADMIN_COOP', correo: 'gerente@pelileo.com', label: 'Gerente Pelileo' },
-    { rol: 'OFICINISTA', correo: 'taquilla@transporteuta.com', label: 'Oficinista / Taquilla' }
+    { rol: 'OFICINISTA', correo: 'taquilla@transporteuta.com', label: 'Oficinista / Taquilla' },
+    { rol: 'CHOFER', correo: 'chofer.cita15@transporteuta.com', label: '🚍 Chofer Bus #15 (CITA)' }
   ] : [];
 
   const handleSeleccionarPrueba = (user) => {
     setCorreo(user.correo);
-    setPassword('');
+    setPassword(user.rol === 'CHOFER' ? 'Chofer2026*' : 'Admin2026*');
     setError('');
   };
 
@@ -55,6 +63,10 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
           // Redirigir al módulo de Taquilla de Daky
           window.location.hash = 'oficina';
           if (onLoginSuccess) onLoginSuccess(data.usuario, '/oficina');
+        } else if (data.usuario.rol === 'CHOFER') {
+          // Redirigir a la Cabina del Chofer
+          window.location.hash = 'chofer';
+          if (onLoginSuccess) onLoginSuccess(data.usuario, '/chofer');
         } else {
           // SuperAdmin o Administrador de Cooperativa
           window.location.hash = 'admin';

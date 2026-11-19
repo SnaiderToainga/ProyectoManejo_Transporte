@@ -15,12 +15,14 @@ const catalogRoutes = require('./routes/catalogRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const officeRoutes = require('./routes/officeRoutes');
+const choferRoutes = require('./routes/choferRoutes');
 
 app.use('/api', catalogRoutes);
 app.use('/api', bookingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', officeRoutes);
 app.use('/api/oficina', officeRoutes);
+app.use('/api/chofer', choferRoutes);
 
 // Manejo de errores
 app.use((err, req, res, next) => {

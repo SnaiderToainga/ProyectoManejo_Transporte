@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canAccessOffice, canAccessAdmin, getRedirectRouteForRole, ROLES } from '../../src/lib/authGuard.js';
+import { canAccessOffice, canAccessDriver, canAccessAdmin, getRedirectRouteForRole, ROLES } from '../../src/lib/authGuard.js';
 
 test('Seguridad RBAC: denegar acceso a taquilla para usuarios no autenticados o anónimos', () => {
   assert.equal(canAccessOffice(null), false);
@@ -19,6 +19,15 @@ test('Seguridad RBAC: autorizar acceso a taquilla únicamente a oficinistas y su
   const superadmin = { id: 3, nombre: 'Admin Global', rol: ROLES.SUPERADMIN };
   assert.equal(canAccessOffice(oficinista), true);
   assert.equal(canAccessOffice(superadmin), true);
+});
+
+test('Seguridad RBAC: autorizar cabina de chofer únicamente a choferes y superadmin (CR-04)', () => {
+  assert.equal(canAccessDriver(null), false);
+  assert.equal(canAccessDriver({ rol: ROLES.CLIENTE }), false);
+  assert.equal(canAccessDriver({ rol: ROLES.OFICINISTA }), false);
+  assert.equal(canAccessDriver({ rol: ROLES.CHOFER }), true);
+  assert.equal(canAccessDriver({ rol: ROLES.SUPERADMIN }), true);
+  assert.equal(getRedirectRouteForRole({ rol: ROLES.CHOFER }), 'chofer');
 });
 
 test('Seguridad RBAC: verificar acceso al panel de administración', () => {
