@@ -13,6 +13,7 @@ async function createFixture() {
     ALTER TABLE usuarios ADD CHECK(rol IN ('SUPERADMIN','ADMIN_COOP','OFICINISTA','CLIENTE','CHOFER'));`);
   await database.exec(migration);
   await database.exec(migration);
+  await database.exec(readFileSync(path.join(__dirname, '../../database/05_boletos_termicos_tarifas.sql'), 'utf8'));
   let queue = Promise.resolve();
   async function connect() {
     const previous = queue;
@@ -21,7 +22,7 @@ async function createFixture() {
     await previous;
     return { query: async (sql, params) => {
       const result = await database.query(sql, params);
-      return { ...result, rowCount: result.affectedRows ?? result.rows.length };
+      return { ...result, rowCount: result.affectedRows || result.rows.length };
     }, release };
   }
   const pool = { connect, query: async (sql, params) => {
@@ -37,6 +38,7 @@ async function createFixture() {
   app.use('/api/planificacion', require('../../src/routes/planningRoutes'));
   app.use('/api', require('../../src/routes/catalogRoutes'));
   app.use('/api', require('../../src/routes/officeRoutes'));
+  app.use('/api/oficina', require('../../src/routes/officeRoutes'));
   app.use('/api', require('../../src/routes/bookingRoutes'));
   app.use('/api/chofer', require('../../src/routes/choferRoutes'));
   app.use((error, req, res, next) => res.status(500).json({ error: error.message }));

@@ -200,7 +200,7 @@ test('retirar una asignación libre conserva su historial y permite reasignar el
   assert.equal((await save([replacement(original, null, false)])).status, 200);
   assert.equal((await load()).data.viajes.length, 14);
   assert.equal((await request('/venta-ventanilla', { method: 'POST', user: 4, data: {
-    programacion_id: original.id, pasajeros: [{ asiento_id: 9, nombre: 'Prueba', cedula: '1800000000', precio: 5 }]
+    programacion_id: original.id, pasajeros: [{ asiento_id: 9, nombre: 'Prueba', cedula: '1710034065', precio: 5 }]
   } })).status, 400);
   assert.equal((await save([{ frecuencia_id: original.frecuencia_id, fecha: original.fecha_viaje, bus_id: original.bus_id }])).status, 200);
   const current = (await load()).data;
@@ -230,7 +230,7 @@ test('venta y reserva usan las asignaciones guardadas y rechazan asientos del bu
   const trip = (await load()).data.viajes[0];
   const oldSeat = (await fixture.pool.query('SELECT id FROM asientos WHERE bus_id=$1 AND numero_asiento=9', [trip.bus_id])).rows[0].id;
   const pending = await request('/reservas', { method: 'POST', user: null, data: {
-    programacion_id: trip.id, asientos: [oldSeat], pasajeros: [{ asiento_id: oldSeat, nombre: 'Pasajero de prueba', cedula: '1800000000', precio: 5 }]
+    programacion_id: trip.id, asientos: [oldSeat], pasajeros: [{ asiento_id: oldSeat, nombre: 'Pasajero de prueba', cedula: '1710034065', precio: 5 }]
   } });
   assert.equal(pending.status, 201);
   assert.equal((await save([replacement(trip, 4)])).status, 200);
@@ -239,12 +239,12 @@ test('venta y reserva usan las asignaciones guardadas y rechazan asientos del bu
   assert.equal(reservation.data.boletos[0].numero_asiento, 9);
   assert.notEqual(reservation.data.boletos[0].asiento_id, oldSeat);
   const invalidSale = await request('/venta-ventanilla', { method: 'POST', user: 4, data: {
-    programacion_id: trip.id, pasajeros: [{ asiento_id: oldSeat, nombre: 'Prueba', cedula: '1800000000', precio: 5 }]
+    programacion_id: trip.id, pasajeros: [{ asiento_id: oldSeat, nombre: 'Prueba', cedula: '1710034065', precio: 5 }]
   } });
   assert.equal(invalidSale.status, 400);
   const newSeat = (await fixture.pool.query('SELECT id FROM asientos WHERE bus_id=4 AND numero_asiento=10')).rows[0].id;
   const sale = await request('/venta-ventanilla', { method: 'POST', user: 4, data: {
-    programacion_id: trip.id, pasajeros: [{ asiento_id: newSeat, nombre: 'Prueba', cedula: '1800000000', precio: 5 }]
+    programacion_id: trip.id, pasajeros: [{ asiento_id: newSeat, nombre: 'Prueba', cedula: '1710034065', precio: 5 }]
   } });
   assert.equal(sale.status, 201);
 });
