@@ -1,6 +1,6 @@
+import { officeRequest } from '../../lib/officeApi.js';
 import { useEffect, useState } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api';
 const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/api\/?$/, '');
 
 const getComprobanteUrl = (url) => {
@@ -11,7 +11,7 @@ const getComprobanteUrl = (url) => {
   return `${cleanBase}${cleanPath}`;
 };
 
-const ValidacionComprobantes = () => {
+const ValidacionComprobantes = ({ usuario }) => {
   const [reservas, setReservas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalImage, setModalImage] = useState(null);
@@ -21,11 +21,7 @@ const ValidacionComprobantes = () => {
     try {
       setLoading(true);
       setError('');
-      const response = await fetch(`${API_URL}/reservas-pendientes`);
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || `No se pudieron cargar las reservas (${response.status}).`);
-      }
+      const data = await officeRequest(usuario, '/reservas-pendientes');
       if (!Array.isArray(data)) {
         throw new Error('El servicio devolvió una lista de reservas no válida.');
       }
@@ -39,26 +35,18 @@ const ValidacionComprobantes = () => {
 
   useEffect(() => {
     fetchReservas();
-  }, []);
+  }, [usuario?.token]);
 
   const handleAccion = async (reserva_id, accion) => {
     if (!window.confirm(`¿Seguro que deseas ${accion} esta reserva?`)) return;
 
     try {
-      const response = await fetch(`${API_URL}/reservas/${reserva_id}/${accion}`, {
-        method: 'PUT',
-      });
-
-      if (response.ok) {
-        alert(`Reserva ${accion === 'aprobar' ? 'aprobada' : 'rechazada'} correctamente.`);
-        fetchReservas();
-      } else {
-        const errorData = await response.json();
-        alert(`Error: ${errorData.error || 'No se pudo procesar'}`);
-      }
+      await officeRequest(usuario, `/reservas/${reserva_id}/${accion}`, { method: 'PUT' });
+      alert(`Reserva ${accion === 'aprobar' ? 'aprobada' : 'rechazada'} correctamente.`);
+      fetchReservas();
     } catch (error) {
       console.error(error);
-      alert("Error de conexión con el servidor.");
+      alert(error.message || 'Error de conexión con el servidor.');
     }
   };
 

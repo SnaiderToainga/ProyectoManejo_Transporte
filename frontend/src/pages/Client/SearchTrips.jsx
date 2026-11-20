@@ -203,7 +203,8 @@ export default function SearchTrips({ onChoose }) {
                         precio_base: precioFinal,
                         ruta_completa_origen: trip.origen,
                         ruta_completa_destino: trip.destino,
-                        es_tramo_intermedio: esTramo
+                        es_tramo_intermedio: esTramo,
+                        tramo: { inicio: startIdx, fin: endIdx }
                       }, query.categoria)}
                     >
                       Elegir asientos <ArrowRight size={16} />

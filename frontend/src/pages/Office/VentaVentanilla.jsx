@@ -1,31 +1,21 @@
+import { officeRequest } from '../../lib/officeApi.js';
 import { useEffect, useRef, useState } from 'react';
 import { money, shortTime, today } from '../../lib/format.js';
 import { isAvailable, seatPrice, uniqueSeats } from '../../lib/seats.js';
 import { passengerError } from '../../lib/validation.js';
+import OfficeTickets from '../../components/OfficeTickets.jsx';
+import { discountedPrice } from '../../lib/ticketDetails.js';
 
-const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const emptyPassenger = () => ({ asiento_id: '', nombre: '', cedula: '', tipo: 'NORMAL' });
 const inputClass = 'block w-full rounded border border-gray-300 px-3 py-2';
-
-async function request(path, options) {
-  const response = await fetch(`${API_URL}${path}`, options);
-  const data = await response.json().catch(() => null);
-  if (!response.ok || !data) {
-    const error = new Error(data?.error || 'No se pudo completar la solicitud.');
-    error.status = response.status;
-    error.occupied = data?.asientos_ocupados;
-    throw error;
-  }
-  return data;
-}
 
 function passengerPrice(seat, trip, type) {
   if (!seat || !trip) return null;
   const price = seatPrice(seat, trip);
-  return price === null || type === 'NORMAL' ? price : Number((price / 2).toFixed(2));
+  return price === null ? null : discountedPrice(price, type);
 }
 
-export default function VentaVentanilla() {
+export default function VentaVentanilla({ usuario }) {
   const [date, setDate] = useState(today);
   const [trips, setTrips] = useState([]);
   const [tripId, setTripId] = useState('');
@@ -33,6 +23,7 @@ export default function VentaVentanilla() {
   const [passengers, setPassengers] = useState(() => [emptyPassenger()]);
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState(null);
+  const [saleCode, setSaleCode] = useState('');
   const [catalogError, setCatalogError] = useState('');
   const [loadingTrips, setLoadingTrips] = useState(true);
   const [loadingSeats, setLoadingSeats] = useState(false);
@@ -43,22 +34,22 @@ export default function VentaVentanilla() {
   useEffect(() => {
     if (!date) return;
     const controller = new AbortController();
-    request(`/viajes?fecha=${encodeURIComponent(date)}`, { signal: controller.signal })
+    officeRequest(usuario, `/oficina/hoja-ruta?fecha=${encodeURIComponent(date)}`, { signal: controller.signal })
       .then(data => setTrips(data.filter(trip => trip.estado === 'PROGRAMADO')))
       .catch(error => { if (!controller.signal.aborted) setCatalogError(error.message); })
       .finally(() => { if (!controller.signal.aborted) setLoadingTrips(false); });
     return () => controller.abort();
-  }, [date]);
+  }, [date, usuario?.token]);
 
   useEffect(() => {
     if (!tripId) return;
     const controller = new AbortController();
-    request(`/viajes/${encodeURIComponent(tripId)}/asientos`, { signal: controller.signal })
+    officeRequest(usuario, `/viajes/${encodeURIComponent(tripId)}/asientos`, { signal: controller.signal })
       .then(data => setSeats(uniqueSeats(data).filter(isAvailable)))
       .catch(error => { if (!controller.signal.aborted) setCatalogError(error.message); })
       .finally(() => { if (!controller.signal.aborted) setLoadingSeats(false); });
     return () => controller.abort();
-  }, [tripId, seatRefresh]);
+  }, [tripId, seatRefresh, usuario?.token]);
 
   const trip = trips.find(item => String(item.programacion_id) === tripId);
   const seatFor = id => seats.find(seat => String(seat.asiento_id) === id);
@@ -96,6 +87,7 @@ export default function VentaVentanilla() {
       asiento_id: Number(asiento_id),
       nombre: nombre.trim(),
       cedula: cedula.trim(),
+      tipo_pasajero: tipo,
       precio: passengerPrice(seatFor(asiento_id), trip, tipo),
     }));
     const error = passengerError(details) || (
@@ -113,17 +105,17 @@ export default function VentaVentanilla() {
     setSubmitting(true);
     setMessage(null);
     try {
-      const data = await request('/venta-ventanilla', {
+      const data = await officeRequest(usuario, '/venta-ventanilla', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        data: {
           programacion_id: trip.programacion_id,
           pasajeros: details,
           ...(email.trim() && { email: email.trim() }),
-        }),
+        },
       });
       const code = data.codigo_reserva || data.reserva?.codigo_reserva;
       const saleTotal = data.reserva?.total;
+      if (code) setSaleCode(code);
       setMessage({
         success: code
           ? `Venta registrada. Código de reserva: ${code}.${saleTotal != null ? ` Total: ${money(saleTotal)}.` : ''}`
@@ -209,6 +201,8 @@ export default function VentaVentanilla() {
                   <option value="DISCAPACIDAD">Persona con discapacidad (50 %)</option>
                 </select>
               </label>
+              <p className="small-copy">Base: {money(seatFor(passenger.asiento_id) ? seatPrice(seatFor(passenger.asiento_id), trip) : 0)} · Descuento: {money((seatFor(passenger.asiento_id) ? seatPrice(seatFor(passenger.asiento_id), trip) : 0) - (passengerPrice(seatFor(passenger.asiento_id), trip, passenger.tipo) ?? 0))} · Total: {money(passengerPrice(seatFor(passenger.asiento_id), trip, passenger.tipo) ?? 0)}</p>
+              {passenger.tipo !== 'NORMAL' && <p className="small-copy">Verifica el documento y el beneficio con el pasajero. Una cédula válida no acredita por sí sola edad o discapacidad.</p>}
               {passengers.length > 1 && (
                 <button type="button" className="text-blue-700" onClick={() => setPassengers(current => current.filter((_, i) => i !== index))}>
                   Quitar pasajero {index + 1}
@@ -231,6 +225,7 @@ export default function VentaVentanilla() {
         {message?.error && <p role="alert" className="mt-4 text-red-700">{message.error}</p>}
         {message?.success && <p role="status" className="mt-4 text-green-800">{message.success}</p>}
       </form>
+      <OfficeTickets code={saleCode} />
     </div>
   );
 }

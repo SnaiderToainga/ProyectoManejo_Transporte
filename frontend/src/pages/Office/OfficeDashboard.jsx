@@ -46,8 +46,8 @@ const OfficeDashboard = ({ usuario }) => {
 
       {/* Contenido Dinámico según la pestaña */}
       <div className="bg-white p-6 rounded-lg shadow-md">
-        {activeTab === 'comprobantes' && <ValidacionComprobantes />}
-        {activeTab === 'ventanilla' && <VentaVentanilla />}
+        {activeTab === 'comprobantes' && <ValidacionComprobantes usuario={usuario} />}
+        {activeTab === 'ventanilla' && <VentaVentanilla usuario={usuario} />}
         {activeTab === 'hojaruta' && <HojaRuta usuario={usuario} />}
       </div>
     </div>

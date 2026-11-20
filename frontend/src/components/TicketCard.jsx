@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Download, BusFront } from 'lucide-react';
+import { Download, BusFront, Printer } from 'lucide-react';
 import { api, isDemo } from '../lib/api.js';
 import { money, shortTime, travelDate } from '../lib/format.js';
+import { passengerLabels, purchaseTime } from '../lib/ticketDetails.js';
 
 export default function TicketCard({ reservation, ticket }) {
   const [qr, setQr] = useState('');
@@ -40,10 +41,11 @@ export default function TicketCard({ reservation, ticket }) {
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   };
+  const hasBreakdown = ticket.tarifa_base != null && ticket.descuento != null && passengerLabels[ticket.tipo_pasajero];
   return <article className="ticket-card">
     <div className="ticket-heading"><BusFront size={22} /><span>{reservation.cooperativa_nombre}</span><strong>{reservation.codigo_reserva}</strong></div>
-    <div className="ticket-body"><div><p className="eyebrow">BOLETO DE VIAJE</p><h2>{reservation.origen} → {reservation.destino}</h2><p>{travelDate(reservation.fecha_viaje)} · {shortTime(reservation.hora_salida_programada)}</p><dl className="ticket-details"><div><dt>Pasajero</dt><dd>{ticket.nombre_pasajero}</dd></div><div><dt>Cédula</dt><dd>{ticket.cedula_pasajero}</dd></div><div><dt>Asiento</dt><dd>{ticket.numero_asiento} · {ticket.categoria}</dd></div><div><dt>Tarifa</dt><dd>{money(ticket.precio)}</dd></div></dl></div>
+    <div className="ticket-body"><div><p className="eyebrow">BOLETO DE VIAJE</p><h2>{reservation.origen} → {reservation.destino}</h2><p>Salida: {travelDate(reservation.fecha_viaje)} · {shortTime(reservation.hora_salida_programada)}</p><p className="small-copy">Compra: {purchaseTime(reservation.comprado_en)}</p><dl className="ticket-details"><div><dt>Pasajero</dt><dd>{ticket.nombre_pasajero}</dd></div><div><dt>Cédula</dt><dd>{ticket.cedula_pasajero}</dd></div><div><dt>Asiento</dt><dd>{ticket.numero_asiento} · {ticket.categoria}</dd></div>{hasBreakdown ? <><div><dt>Tarifa base</dt><dd>{money(ticket.tarifa_base)}</dd></div><div><dt>Tipo de pasajero</dt><dd>{passengerLabels[ticket.tipo_pasajero]}</dd></div><div><dt>Descuento ({ticket.tipo_pasajero === 'NORMAL' ? '0' : '50'} %)</dt><dd>{money(ticket.descuento)}</dd></div></> : <div><dt>Desglose histórico</dt><dd>No registrado</dd></div>}<div><dt>Total del boleto</dt><dd>{money(ticket.precio)}</dd></div></dl></div>
       <div className="ticket-qr">{qrFailed ? <p role="status">{isDemo ? 'No se pudo mostrar el QR de ejemplo.' : 'No se pudo mostrar el QR. Descarga el PDF para obtenerlo.'}</p> : qr ? <img src={qr} onError={() => setQrFailed(true)} width="156" height="156" alt={`Código QR del boleto del asiento ${ticket.numero_asiento}`} /> : <p>Generando QR…</p>}<span>{isDemo ? 'EJEMPLO · NO VÁLIDO PARA VIAJAR' : ticket.validado_en_puerta ? 'BOLETO YA UTILIZADO' : 'Presenta este QR al abordar'}</span></div>
-    </div><div className="ticket-bottom"><span>Unidad {reservation.numero_disco} · Asiento {ticket.numero_asiento}</span>{isDemo ? <span className="small-copy">La descarga PDF requiere una reserva real.</span> : <button className="button primary" onClick={download} disabled={busy}><Download size={16} />{busy ? 'Descargando…' : 'Descargar boleto PDF'}</button>}</div>{error && <p className="inline-error" role="alert">{error}</p>}
+    </div><div className="ticket-bottom"><span>Unidad {reservation.numero_disco} · Asiento {ticket.numero_asiento}</span>{isDemo ? <span className="small-copy">La descarga PDF requiere una reserva real.</span> : <div className="ticket-actions"><a className="button secondary" href={api.ticketUrl(reservation.codigo_reserva, ticket.id)} target="_blank" rel="noopener noreferrer"><Printer size={16} />Abrir / imprimir (80 mm)</a><button className="button primary" onClick={download} disabled={busy}><Download size={16} />{busy ? 'Descargando…' : 'Descargar boleto PDF'}</button></div>}</div>{error && <p className="inline-error" role="alert">{error}</p>}
   </article>;
 }

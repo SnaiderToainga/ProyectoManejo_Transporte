@@ -7,6 +7,7 @@ import { money, shortTime, travelDate } from '../../lib/format.js';
 import { seatPrice, seatCategory } from '../../lib/seats.js';
 import { rememberCode, reservationStatus, secondsRemaining } from '../../lib/reservation.js';
 import { passengerError, receiptError } from '../../lib/validation.js';
+import { discountedPrice } from '../../lib/ticketDetails.js';
 
 export function PaymentPanel({ reservation, onUpdate, onDone }) {
   const [file, setFile] = useState(null);
@@ -176,7 +177,7 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
   const getPassengerPrice = (seat, tipo) => {
     const base = seatPrice(seat, trip) || 0;
     if (tipo && tipo !== 'NORMAL') {
-      return Number((base * 0.5).toFixed(2));
+      return discountedPrice(base, tipo);
     }
     return base;
   };
@@ -215,22 +216,15 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
     setBusy(true);
     setError('');
 
-    const etiquetaTipo = {
-      TERCERA_EDAD: 'Tercera Edad',
-      NIÑO: 'Menor',
-      DISCAPACIDAD: 'Discapacidad'
-    };
-
     try {
       const result = await api.reserve({
         programacion_id: trip.programacion_id,
+        ...(trip.tramo && { tramo: trip.tramo }),
         email: email.trim(),
         asientos: seats.map(seat => seat.asiento_id),
         pasajeros: passengers.map((passenger, i) => {
           const tipo = passenger.tipo_pasajero || 'NORMAL';
-          const nombreFinal = tipo !== 'NORMAL' && etiquetaTipo[tipo]
-            ? `${passenger.nombre.trim()} (${etiquetaTipo[tipo]})`
-            : passenger.nombre.trim();
+          const nombreFinal = passenger.nombre.trim();
           return {
             ...passenger,
             nombre: nombreFinal,
