@@ -11,7 +11,7 @@ function seatIds(values) {
 
 async function lockTrip(client, tripId) {
   const result = await client.query(
-    'SELECT id, bus_id FROM programacion_viajes WHERE id = $1 FOR NO KEY UPDATE',
+    'SELECT id, bus_id, estado FROM programacion_viajes WHERE id = $1 FOR NO KEY UPDATE',
     [tripId]
   );
   return result.rows[0];

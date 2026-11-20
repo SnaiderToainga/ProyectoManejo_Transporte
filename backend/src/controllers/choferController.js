@@ -5,33 +5,7 @@ exports.obtenerViajesChofer = async (req, res) => {
   try {
     const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
 
-    // Asegurar que existan viajes para la fecha solicitada
-    const checkQuery = await db.query(
-      'SELECT COUNT(*)::int as count FROM programacion_viajes WHERE fecha_viaje = $1',
-      [fecha]
-    );
-
-    if (checkQuery.rows[0].count === 0) {
-      // Auto-generar hoja de ruta base para la fecha si aún no existe
-      await db.query(`
-        INSERT INTO programacion_viajes (frecuencia_id, bus_id, fecha_viaje, hora_salida_programada, estado)
-        SELECT 
-          f.id,
-          CASE 
-            WHEN f.id = 4 THEN 3
-            WHEN f.id = 2 THEN 2
-            WHEN f.id = 1 THEN 1
-            ELSE 1
-          END as bus_id,
-          $1::date,
-          f.hora_salida,
-          'PROGRAMADO'
-        FROM frecuencias f
-        ON CONFLICT DO NOTHING
-      `, [fecha]);
-    }
-
-    let whereConditions = ['pv.fecha_viaje = $1'];
+    const whereConditions = ['pv.fecha_viaje = $1', "pv.estado <> 'CANCELADO'"];
     let queryParams = [fecha];
 
     if (req.query.cooperativa_id) {

@@ -345,7 +345,7 @@ export default function App() {
           />
         ) : page === 'oficina' ? (
           canAccessOffice(usuario) ? (
-            <OfficeDashboard />
+            <OfficeDashboard usuario={usuario} />
           ) : (
             <Login
               alertaSeguridad="Acceso restringido a personal de taquilla autorizado"

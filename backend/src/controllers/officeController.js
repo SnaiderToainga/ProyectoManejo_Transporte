@@ -229,7 +229,7 @@ exports.crearVentaVentanilla = async (req, res) => {
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     const trip = await lockTrip(client, progId);
-    const seats = trip && await tripSeats(client, trip, ids);
+    const seats = trip?.estado === 'PROGRAMADO' && await tripSeats(client, trip, ids);
     if (!seats || seats.size !== ids.length) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Los asientos seleccionados no pertenecen al viaje' });
