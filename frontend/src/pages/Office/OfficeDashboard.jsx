@@ -3,7 +3,7 @@ import ValidacionComprobantes from './ValidacionComprobantes';
 import VentaVentanilla from './VentaVentanilla';
 import HojaRuta from './HojaRuta';
 
-const OfficeDashboard = () => {
+const OfficeDashboard = ({ usuario }) => {
   // Estado para controlar qué pestaña está activa
   const [activeTab, setActiveTab] = useState('comprobantes');
 
@@ -13,6 +13,7 @@ const OfficeDashboard = () => {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Panel de Oficinista</h1>
         <p className="text-gray-500">Bienvenido al sistema de ventas y validación en ventanilla</p>
+        {usuario?.sucursal_id && <p className="text-gray-500">Oficina asignada #{usuario.sucursal_id} · {usuario.cooperativa_nombre}</p>}
       </div>
 
       {/* Pestañas de Navegación */}
@@ -47,7 +48,7 @@ const OfficeDashboard = () => {
       <div className="bg-white p-6 rounded-lg shadow-md">
         {activeTab === 'comprobantes' && <ValidacionComprobantes />}
         {activeTab === 'ventanilla' && <VentaVentanilla />}
-        {activeTab === 'hojaruta' && <HojaRuta />}
+        {activeTab === 'hojaruta' && <HojaRuta usuario={usuario} />}
       </div>
     </div>
   );

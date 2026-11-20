@@ -1,137 +1,230 @@
 import { useEffect, useState } from 'react';
+import { planningRequest } from '../../lib/planningApi.js';
+import { today } from '../../lib/format.js';
+import PlanningSetup from './PlanningSetup.jsx';
+import './planning.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-
-const HojaRuta = () => {
-  const [viajes, setViajes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // 1. Cargar los viajes del día al montar el componente
-  const fetchViajes = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const response = await fetch(`${API_URL}/hoja-ruta`);
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || `No se pudo cargar la hoja de ruta (${response.status}).`);
-      }
-      if (!Array.isArray(data)) {
-        throw new Error('El servicio devolvió una lista de viajes no válida.');
-      }
-      setViajes(data);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'No se pudo cargar la hoja de ruta.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchViajes();
-  }, []);
-
-  // 2. Función para actualizar el estado de un viaje
-  const handleCambiarEstado = async (id, nuevoEstado) => {
-    try {
-      const response = await fetch(`${API_URL}/hoja-ruta/${id}/estado`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado_viaje: nuevoEstado })
-      });
-
-      if (response.ok) {
-        // Actualizar el estado localmente sin recargar toda la página
-        setViajes(viajes.map(v => 
-          (v.id === id || v.programacion_id === id) ? { ...v, estado_viaje: nuevoEstado } : v
-        ));
-      } else {
-        const errorData = await response.json();
-        alert(`Error: ${errorData.error || 'No se pudo actualizar'}`);
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Error de conexión con el servidor.");
-    }
-  };
-
-  // Función auxiliar para pintar los colores según el estado
-  const getBadgeColor = (estado) => {
-    switch (estado) {
-      case 'PROGRAMADO': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'EN_RUTA': return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'FINALIZADO': return 'bg-green-100 text-green-800 border-green-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
-  };
-
-  if (loading) return <div className="text-center p-4">Cargando hoja de ruta...</div>;
-
-  return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4 text-gray-800">Hoja de Ruta Diaria</h2>
-      <p className="text-gray-500 mb-6">Viajes programados para el día de hoy. Actualiza el estado a medida que avanzan.</p>
-
-      {error ? (
-        <div className="text-red-700" role="alert">
-          <p>{error}</p>
-          <button className="mt-3 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700" onClick={fetchViajes}>
-            Reintentar
-          </button>
-        </div>
-      ) : viajes.length === 0 ? (
-        <p className="text-gray-500">No hay viajes programados para hoy. 🚌</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white border border-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Hora Salida</th>
-                <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Ruta</th>
-                <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Bus (Disco/Placa)</th>
-                <th className="py-2 px-4 border-b text-center text-sm font-semibold text-gray-600">Estado Actual</th>
-                <th className="py-2 px-4 border-b text-center text-sm font-semibold text-gray-600">Cambiar Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {viajes.map((viaje) => (
-                <tr key={viaje.programacion_id} className="hover:bg-gray-50">
-                  <td className="py-2 px-4 border-b text-sm text-gray-700 font-medium">
-                    {viaje.hora_salida || viaje.hora_salida_programada}
-                  </td>
-                  <td className="py-2 px-4 border-b text-sm text-gray-700">
-                    {viaje.origen} → {viaje.destino}
-                    <div className="text-xs text-gray-500">{viaje.tipo_servicio}</div>
-                  </td>
-                  <td className="py-2 px-4 border-b text-sm text-gray-700">
-                    {viaje.numero_disco} 
-                    <div className="text-xs text-gray-500">{viaje.placa}</div>
-                  </td>
-                  <td className="py-2 px-4 border-b text-center">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getBadgeColor(viaje.estado_viaje)}`}>
-                      {viaje.estado_viaje}
-                    </span>
-                  </td>
-                  <td className="py-2 px-4 border-b text-center">
-                    <select
-                      value={viaje.estado_viaje || viaje.estado}
-                      onChange={(e) => handleCambiarEstado(viaje.id || viaje.programacion_id, e.target.value)}
-                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="PROGRAMADO">PROGRAMADO</option>
-                      <option value="EN_RUTA">EN_RUTA</option>
-                      <option value="FINALIZADO">FINALIZADO</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+const cellKey = (frequency, date) => `${frequency}:${date}`;
+const endOfCycle = () => {
+  const date = new Date(`${today()}T12:00:00`);
+  date.setDate(date.getDate() + 4);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-export default HojaRuta;
+export default function HojaRuta({ usuario }) {
+  const manager = ['ADMIN_COOP', 'SUPERADMIN'].includes(usuario?.rol);
+  const [cooperatives, setCooperatives] = useState([]);
+  const [cooperativeId, setCooperativeId] = useState(usuario?.cooperativa_id || '');
+  const [catalog, setCatalog] = useState(null);
+  const [tab, setTab] = useState('matriz');
+  const [filters, setFilters] = useState({ grupo_buses_id: '', grupo_frecuencias_id: '', desde: today(), hasta: endOfCycle() });
+  const [matrix, setMatrix] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [reason, setReason] = useState('Asignación manual de hoja de ruta.');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [catalogReload, setCatalogReload] = useState(0);
+  const changes = Object.values(draft).filter(cell => cell.bus_id !== (cell.original_bus_id || null));
+  const dirty = changes.length > 0;
+
+  useEffect(() => {
+    if (usuario?.rol !== 'SUPERADMIN') return;
+    const abort = new AbortController();
+    planningRequest(usuario, '/admin/cooperativas', { signal: abort.signal }).then(data => {
+      setCooperatives(data);
+      setCooperativeId(id => id || data[0]?.id || '');
+    }).catch(err => { if (!abort.signal.aborted) setError(err.message); });
+    return () => abort.abort();
+  }, [usuario?.token]);
+
+  useEffect(() => {
+    if (!cooperativeId) return;
+    const abort = new AbortController();
+    setCatalog(null);
+    setMatrix(null);
+    setDraft({});
+    setError('');
+    planningRequest(usuario, `/planificacion/catalogo?cooperativa_id=${cooperativeId}`, { signal: abort.signal }).then(data => {
+      setCatalog(data);
+      setFilters(current => {
+        const group = data.grupos_buses.find(g => String(g.id) === String(current.grupo_buses_id)) || data.grupos_buses[0];
+        const linked = data.vinculos.find(v => v.grupo_buses_id === group?.id);
+        return { ...current, grupo_buses_id: group?.id || '', grupo_frecuencias_id: linked?.grupo_frecuencias_id || '' };
+      });
+    }).catch(err => { if (!abort.signal.aborted) setError(err.message); });
+    return () => abort.abort();
+  }, [cooperativeId, usuario?.token, catalogReload]);
+
+  useEffect(() => {
+    setMatrix(null);
+    setDraft({});
+    if (!catalog || !filters.grupo_buses_id || !filters.grupo_frecuencias_id) return;
+    const abort = new AbortController();
+    setLoading(true);
+    setError('');
+    const params = new URLSearchParams({ ...filters, cooperativa_id: cooperativeId });
+    planningRequest(usuario, `/planificacion/matriz?${params}`, { signal: abort.signal }).then(data => {
+      const cells = {};
+      for (const frequency of data.frecuencias) {
+        for (const date of data.fechas) {
+          const trips = data.viajes.filter(v => v.frecuencia_id === frequency.id && v.fecha_viaje === date);
+          if (trips.length > 1) throw new Error('Hay viajes duplicados para una frecuencia y fecha. Revisa la programación existente antes de editar.');
+          const trip = trips[0];
+          cells[cellKey(frequency.id, date)] = { frecuencia_id: frequency.id, fecha: date,
+            bus_id: trip?.bus_id || null, original_bus_id: trip?.bus_id || null,
+            programacion_id: trip?.id || null, version: trip?.version || null, estado: trip?.estado || 'PROGRAMADO', averia: false };
+        }
+      }
+      setMatrix(data);
+      setDraft(cells);
+    }).catch(err => { if (!abort.signal.aborted) setError(err.message); })
+      .finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    return () => abort.abort();
+  }, [catalog, cooperativeId, filters, reload, usuario?.token]);
+
+  async function propose() {
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await planningRequest(usuario, '/planificacion/propuesta', { method: 'POST', data: { ...filters, cooperativa_id: cooperativeId } });
+      setDraft(current => {
+        const next = { ...current };
+        for (const assignment of result.asignaciones) {
+          const key = cellKey(assignment.frecuencia_id, assignment.fecha);
+          if (current[key]?.estado === 'PROGRAMADO' && assignment.fecha >= today()) {
+            next[key] = { ...current[key], bus_id: assignment.bus_id, averia: false };
+          }
+        }
+        return next;
+      });
+      setReason('Propuesta de rotación equitativa con al menos dos unidades de reserva.');
+      setMessage('Propuesta preparada. Revisa la matriz y pulsa Guardar asignaciones.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await planningRequest(usuario, '/planificacion/matriz', { method: 'PUT', data: {
+        ...filters, cooperativa_id: cooperativeId, motivo: reason,
+        asignaciones: changes.map(({ original_bus_id, estado, ...cell }) => cell)
+      } });
+      setMessage(result.actualizados === 1 ? 'Se guardó 1 asignación.' : `Se guardaron ${result.actualizados} asignaciones.`);
+      setReload(value => value + 1);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function busyOnDate(bus, date) {
+    const selectedFrequencyIds = matrix.frecuencias.map(f => f.id);
+    return Object.values(draft).some(cell => cell.fecha === date && cell.bus_id === bus.id)
+      || matrix.ocupaciones.some(v => v.bus_id === bus.id && v.fecha_viaje === date && !selectedFrequencyIds.includes(v.frecuencia_id));
+  }
+
+  return <section className="planning" aria-label="Planificación de hojas de ruta">
+    <h2>Hojas de ruta · Matriz de programación</h2>
+    <p>Selecciona grupos vinculados, revisa la rotación y guarda las unidades de cada frecuencia y fecha.</p>
+    {usuario?.rol === 'SUPERADMIN' && <label>Cooperativa de planificación<select disabled={dirty || saving} value={cooperativeId}
+      onChange={e => setCooperativeId(e.target.value)}>
+      <option value="">Selecciona una cooperativa</option>
+      {cooperatives.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+    </select></label>}
+    {manager && <div className="planning-actions" role="group" aria-label="Secciones de planificación">
+      <button type="button" className="button secondary" aria-pressed={tab === 'matriz'} onClick={() => setTab('matriz')}>Matriz de rutas</button>
+      <button type="button" className="button secondary" disabled={dirty || saving} aria-pressed={tab === 'grupos'} onClick={() => setTab('grupos')}>Grupos, sucursales y oficinistas</button>
+    </div>}
+    {error && <div className="planning-error" role="alert">{error} <button type="button" onClick={() => setCatalogReload(v => v + 1)}>Recargar datos</button></div>}
+    {message && <p className="planning-success" role="status">{message}</p>}
+    {!catalog && !error && <p role="status">Cargando grupos operativos…</p>}
+    {catalog && tab === 'grupos' && manager && <PlanningSetup key={cooperativeId} usuario={usuario} cooperativaId={cooperativeId}
+      catalogo={catalog} onChanged={() => { setMessage('Configuración guardada correctamente.'); setCatalogReload(v => v + 1); }} />}
+    {catalog && tab === 'matriz' && <>
+      <fieldset disabled={dirty || saving} className="planning-filters">
+        <label>Grupo de buses<select value={filters.grupo_buses_id} onChange={e => {
+          const linked = catalog.vinculos.find(v => v.grupo_buses_id === Number(e.target.value));
+          setFilters({ ...filters, grupo_buses_id: e.target.value, grupo_frecuencias_id: linked?.grupo_frecuencias_id || '' });
+        }}><option value="">Selecciona un grupo</option>{catalog.grupos_buses.map(g => <option key={g.id} value={g.id}>{g.nombre} · {g.tipo_operacion}</option>)}</select></label>
+        <label>Grupo de frecuencias<select value={filters.grupo_frecuencias_id} onChange={e => setFilters({ ...filters, grupo_frecuencias_id: e.target.value })}>
+          <option value="">Selecciona un grupo vinculado</option>{catalog.grupos_frecuencias.filter(g => catalog.vinculos.some(v =>
+            v.grupo_buses_id === Number(filters.grupo_buses_id) && v.grupo_frecuencias_id === g.id))
+            .map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+        </select></label>
+        <label>Desde<input type="date" value={filters.desde} onChange={e => setFilters({ ...filters, desde: e.target.value })} /></label>
+        <label>Hasta<input type="date" value={filters.hasta} onChange={e => setFilters({ ...filters, hasta: e.target.value })} /></label>
+      </fieldset>
+      {!filters.grupo_frecuencias_id && <p>Crea y vincula los grupos antes de programar. El gerente puede configurarlos en «Grupos, sucursales y oficinistas».</p>}
+      {loading && <p role="status">Cargando matriz…</p>}
+      {matrix && <>
+        <div className="planning-actions">
+          <button type="button" className="button secondary" disabled={saving || dirty} onClick={propose}>Proponer rotación 3+2</button>
+          <button type="button" className="button secondary" disabled={saving} onClick={() => { setReload(v => v + 1); setMessage(''); }}>Descartar cambios / Recargar</button>
+          <span>{changes.length} cambios pendientes</span>
+        </div>
+        <p>La propuesta rota las unidades desde el {matrix.grupo.inicio_ciclo}. Con 5 buses y 3 frecuencias, cada unidad trabaja 3 días y descansa 2 por ciclo. Los reemplazos manuales actualizan el descanso real.</p>
+        <form onSubmit={save}>
+          <div className="planning-scroll" tabIndex={0} role="region" aria-label="Matriz de frecuencias por fecha">
+            <table className="planning-table">
+              <caption>Frecuencias por fecha · {matrix.grupo.nombre}</caption>
+              <thead><tr><th scope="col">Frecuencia / Fecha</th>{matrix.fechas.map(date => <th scope="col" key={date}>{date}</th>)}</tr></thead>
+              <tbody>{matrix.frecuencias.map(f => <tr key={f.id}>
+                <th scope="row">{f.origen} → {f.destino}<small>{f.hora_salida.slice(0, 5)} · {f.resolucion_ant}</small></th>
+                {matrix.fechas.map(date => {
+                  const key = cellKey(f.id, date);
+                  const cell = draft[key];
+                  if (!cell) return <td key={date} />;
+                  const changed = cell.bus_id !== cell.original_bus_id;
+                  return <td key={date} className={changed ? 'planning-changed' : ''}>
+                    <select aria-label={`Bus para ${f.origen} a ${f.destino} ${f.hora_salida.slice(0, 5)} el ${date}`}
+                      disabled={saving || date < today() || cell.estado !== 'PROGRAMADO'} value={cell.bus_id || ''}
+                      onChange={e => setDraft({ ...draft, [key]: { ...cell, bus_id: Number(e.target.value) || null, averia: Boolean(cell.original_bus_id && e.target.value) } })}>
+                      <option value="">Sin asignar</option>
+                      {cell.bus_id && !matrix.buses.some(b => b.id === cell.bus_id) && <option value={cell.bus_id}>Bus fuera del grupo #{cell.bus_id}</option>}
+                      {matrix.buses.map(b => <option key={b.id} value={b.id} disabled={b.estado === 'MANTENIMIENTO'
+                        || matrix.paradas.some(p => p.bus_id === b.id && p.fecha === date && p.motivo === 'AVERIA')}>
+                        Unidad #{b.numero_disco} · {b.placa}{b.estado === 'MANTENIMIENTO' ? ' · Mantenimiento' : ''}
+                      </option>)}
+                    </select>
+                    {cell.estado !== 'PROGRAMADO' && <small>{cell.estado}</small>}
+                    {changed && cell.original_bus_id && cell.bus_id && <label className="planning-check">
+                      <input type="checkbox" checked={cell.averia} disabled={saving}
+                        onChange={e => setDraft({ ...draft, [key]: { ...cell, averia: e.target.checked } })} />Por avería
+                    </label>}
+                  </td>;
+                })}
+              </tr>)}
+              <tr className="planning-stops"><th scope="row">En parada / Reserva</th>{matrix.fechas.map(date => <td key={date}>
+                {matrix.buses.filter(b => !busyOnDate(b, date)).map(b => <small key={b.id}>Unidad #{b.numero_disco}
+                  {matrix.paradas.some(p => p.bus_id === b.id && p.fecha === date && p.motivo === 'AVERIA')
+                    || Object.values(draft).some(c => c.fecha === date && c.original_bus_id === b.id && c.bus_id !== b.id && c.averia)
+                    ? ' · Avería' : b.estado === 'MANTENIMIENTO' ? ' · Mantenimiento' : ' · Descanso'}</small>)}
+              </td>)}</tr></tbody>
+            </table>
+          </div>
+          <label>Motivo de la programación o reemplazo<textarea required minLength={3} maxLength={300} disabled={saving} value={reason} onChange={e => setReason(e.target.value)} /></label>
+          <button className="button primary" disabled={!dirty || saving}>{saving ? 'Guardando…' : 'Guardar asignaciones'}</button>
+        </form>
+        <details><summary>Rotación real en el rango seleccionado</summary><ul>{matrix.buses.map(b => {
+          const working = matrix.fechas.filter(date => busyOnDate(b, date)).length;
+          return <li key={b.id}>Unidad #{b.numero_disco} · {working} días asignados · {matrix.fechas.length - working} días en parada</li>;
+        })}</ul></details>
+        <details><summary>Historial de cambios guardados ({matrix.historial.length})</summary><ul>{matrix.historial.map(h => <li key={h.id}>
+          {h.fecha_viaje} · {h.autor} · Bus {h.bus_anterior_id || 'sin asignación'} → {h.bus_nuevo_id || 'sin asignación'} · {h.motivo}
+        </li>)}</ul></details>
+      </>}
+    </>}
+  </section>;
+}

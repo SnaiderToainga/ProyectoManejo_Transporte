@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import ModalNuevaCooperativa from './ModalNuevaCooperativa.jsx';
 import PersonalizacionBranding from './PersonalizacionBranding.jsx';
+import HojaRuta from '../Office/HojaRuta.jsx';
+import { planningRequest } from '../../lib/planningApi.js';
 import {
   mockCooperativas,
   mockMetricasAdmin,
@@ -99,6 +101,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
   // Formulario nuevo Usuario
   const [modalUsuarioAbierto, setModalUsuarioAbierto] = useState(false);
+  const [sucursalesUsuario, setSucursalesUsuario] = useState([]);
   const [formUsuario, setFormUsuario] = useState({
     nombre: '',
     correo: '',
@@ -107,6 +110,16 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     cooperativa_id: 1,
     password: ''
   });
+
+  useEffect(() => {
+    if (!modalUsuarioAbierto || formUsuario.rol !== 'OFICINISTA') return;
+    const abort = new AbortController();
+    setSucursalesUsuario([]);
+    planningRequest(authUser, `/planificacion/catalogo?cooperativa_id=${isGerente ? coopId : formUsuario.cooperativa_id}`,
+      { signal: abort.signal }).then(data => setSucursalesUsuario(data.sucursales))
+      .catch(err => { if (!abort.signal.aborted) setAlerta(err.message); });
+    return () => abort.abort();
+  }, [modalUsuarioAbierto, formUsuario.rol, formUsuario.cooperativa_id, authUser?.token, isGerente, coopId]);
 
   // Cargar datos reales de la API (con fallback a mock)
   const cargarDatos = async () => {
@@ -552,13 +565,11 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     try {
       const payload = {
         ...formUsuario,
-        creador_rol: usuario?.rol,
-        creador_coop_id: usuario?.cooperativa_id,
-        cooperativa_id: isGerente ? usuario?.cooperativa_id : formUsuario.cooperativa_id
+        cooperativa_id: isGerente ? authUser?.cooperativa_id : formUsuario.cooperativa_id
       };
       const response = await fetch(`${API_URL}/admin/usuarios`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authUser?.token || ''}` },
         body: JSON.stringify(payload)
       });
       const data = await response.json().catch(() => null);
@@ -567,7 +578,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       }
       mostrarAlerta(`Usuario ${formUsuario.nombre} creado exitosamente con rol ${formUsuario.rol}.`);
       setModalUsuarioAbierto(false);
-      setFormUsuario({ nombre: '', correo: '', telefono: '', rol: 'OFICINISTA', cooperativa_id: isGerente ? usuario?.cooperativa_id : 1, password: '', bus_id: '' });
+      setFormUsuario({ nombre: '', correo: '', telefono: '', rol: 'OFICINISTA', cooperativa_id: isGerente ? authUser?.cooperativa_id : 1, password: '', bus_id: '', sucursal_id: '' });
       if (typeof cargarUsuarios === 'function') cargarUsuarios();
     } catch (error) {
       mostrarAlerta(error.message);
@@ -816,7 +827,13 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           <Route size={18} />
           <span>Frecuencias Oficiales (ANT)</span>
         </button>
+        {(isGerente || isSuperAdmin) && <button onClick={() => setTabActiva('planificacion')}
+          style={{ ...styles.tabBtn, ...(tabActiva === 'planificacion' ? styles.tabBtnActive : {}) }}>
+          <Clock size={18} /><span>Grupos y hojas de ruta</span>
+        </button>}
       </nav>
+
+      {tabActiva === 'planificacion' && <HojaRuta usuario={authUser} />}
 
       {/* ==================================================== */}
       {/* PESTAÑA 1: COOPERATIVAS & BRANDING */}
@@ -1639,7 +1656,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                 <label style={styles.formLabel}>Rol en el Sistema</label>
                 <select
                   value={formUsuario.rol}
-                  onChange={(e) => setFormUsuario({ ...formUsuario, rol: e.target.value })}
+                  onChange={(e) => setFormUsuario({ ...formUsuario, rol: e.target.value, bus_id: '', sucursal_id: '' })}
                   style={styles.formInput}
                 >
                   {esSuperAdmin && <option value="ADMIN_COOP">Gerente / Administrador de Cooperativa</option>}
@@ -1668,12 +1685,12 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   </select>
                 </div>
               )}
-              {esSuperAdmin && formUsuario.rol === 'ADMIN_COOP' && (
+              {esSuperAdmin && formUsuario.rol !== 'SUPERADMIN' && (
                 <label style={styles.formLabel}>Cooperativa asignada
                   <select
                     required
                     value={cooperativas.some(c => Number(c.id) === formUsuario.cooperativa_id) ? formUsuario.cooperativa_id : ''}
-                    onChange={e => setFormUsuario({ ...formUsuario, cooperativa_id: Number(e.target.value) })}
+                    onChange={e => setFormUsuario({ ...formUsuario, cooperativa_id: Number(e.target.value), bus_id: '', sucursal_id: '' })}
                     style={styles.formInput}
                   >
                     <option value="">Selecciona una cooperativa</option>
@@ -1681,14 +1698,23 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   </select>
                 </label>
               )}
+              {formUsuario.rol === 'OFICINISTA' && <label style={styles.formLabel}>Sucursal asignada
+                <select required style={styles.formInput} value={formUsuario.sucursal_id || ''}
+                  onChange={e => setFormUsuario({ ...formUsuario, sucursal_id: e.target.value })}>
+                  <option value="">Selecciona una sucursal</option>
+                  {sucursalesUsuario.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.localidad}</option>)}
+                </select>
+                {!sucursalesUsuario.length && <small>Crea primero una sucursal en Grupos y hojas de ruta.</small>}
+              </label>}
               <div>
                 <label style={styles.formLabel}>Contraseña Temporal</label>
                 <input
                   type="password"
                   required
-                  minLength={6}
+                  minLength={formUsuario.rol === 'OFICINISTA' ? 8 : 6}
                   maxLength={128}
-                  placeholder="Mínimo 6 caracteres"
+                  pattern={formUsuario.rol === 'OFICINISTA' ? '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{8,128}' : undefined}
+                  placeholder={formUsuario.rol === 'OFICINISTA' ? 'Mayúscula, minúscula y número; mínimo 8 caracteres' : 'Mínimo 6 caracteres'}
                   value={formUsuario.password}
                   onChange={(e) => setFormUsuario({ ...formUsuario, password: e.target.value })}
                   style={styles.formInput}
