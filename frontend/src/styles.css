@@ -190,3 +190,13 @@ hr { border: 0; border-top: 1px solid #e0e6db; margin: 22px 0; }
 @media (max-width: 380px) {
   .search-main { grid-template-columns: 1fr; }
 }
+/* CR-07: acciones de emisión dentro de taquilla y consulta del cliente. */
+.office-tickets { margin-top: 2rem; padding: 1rem; border: 1px solid #dbe3ee; border-radius: 12px; background: white; scroll-margin-top: 6rem; }
+.office-tickets h3 { font-size: 1.2rem; font-weight: 700; }
+.office-ticket-search, .ticket-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
+.office-ticket-search { margin: 1rem 0; }
+.office-ticket-search label { flex: 1; min-width: 0; }
+.office-ticket-search input { display: block; width: 100%; border: 1px solid #94a3b8; padding: .65rem; border-radius: 6px; }
+.office-tickets .ticket-card { margin-top: 1rem; }
+.ticket-details dd { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .ticket-actions, .ticket-actions .button { width: 100%; } .office-ticket-search { flex-direction: column; align-items: stretch; } }

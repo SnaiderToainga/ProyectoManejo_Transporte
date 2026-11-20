@@ -19,10 +19,10 @@ const choferRoutes = require('./routes/choferRoutes');
 const planningRoutes = require('./routes/planningRoutes');
 
 app.use('/api', catalogRoutes);
-app.use('/api', bookingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', officeRoutes);
 app.use('/api/oficina', officeRoutes);
+app.use('/api', bookingRoutes);
 app.use('/api/chofer', choferRoutes);
 app.use('/api/planificacion', planningRoutes);
 
