@@ -16,6 +16,7 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const officeRoutes = require('./routes/officeRoutes');
 const choferRoutes = require('./routes/choferRoutes');
+const planningRoutes = require('./routes/planningRoutes');
 
 app.use('/api', catalogRoutes);
 app.use('/api', bookingRoutes);
@@ -23,6 +24,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', officeRoutes);
 app.use('/api/oficina', officeRoutes);
 app.use('/api/chofer', choferRoutes);
+app.use('/api/planificacion', planningRoutes);
 
 // Manejo de errores
 app.use((err, req, res, next) => {

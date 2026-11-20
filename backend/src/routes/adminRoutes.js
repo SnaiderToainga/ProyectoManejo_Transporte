@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const { verifyCooperativaOwnership } = require('../middlewares/authMiddleware');
+const { requireSession, requireRoles } = require('../services/sessionAccess');
 
 // 1. Autenticación y roles
 router.post('/login', adminController.login);
@@ -13,8 +14,8 @@ router.put('/cooperativas/:id', verifyCooperativaOwnership, adminController.actu
 router.delete('/cooperativas/:id', verifyCooperativaOwnership, adminController.eliminarCooperativa);
 
 // 3. Usuarios de cooperativa
-router.get('/usuarios', adminController.getUsuarios);
-router.post('/usuarios', adminController.crearUsuario);
+router.get('/usuarios', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.getUsuarios);
+router.post('/usuarios', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.crearUsuario);
 
 // 4. Flota de buses y Plantillas Matriciales de Asientos (CR-09)
 router.get('/buses', adminController.getBuses);

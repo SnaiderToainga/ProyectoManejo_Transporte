@@ -1,6 +1,8 @@
 const db = require('../config/db');
 const { hashPassword, verifyPassword } = require('../services/passwords');
 const { generarEstructuraCompensada } = require('../services/seatTemplateService');
+const { createSession } = require('../services/sessionAccess');
+const { validarEmail, validarPasswordSeguro } = require('../utils/validators');
 
 // ==========================================
 // 1. AUTENTICACIÓN Y ROLES
@@ -17,7 +19,8 @@ exports.login = async (req, res) => {
     const result = await db.query(
       `SELECT u.id, u.nombre, u.correo, u.telefono, u.cedula, u.rol, u.password_hash, u.bus_id,
               c.id AS cooperativa_id, c.nombre AS cooperativa_nombre,
-              b.numero_disco AS bus_disco, b.placa AS bus_placa
+              b.numero_disco AS bus_disco, b.placa AS bus_placa,
+              (to_jsonb(u)->>'sucursal_id')::int AS sucursal_id
        FROM usuarios u 
        LEFT JOIN cooperativas c ON c.id = u.cooperativa_id
        LEFT JOIN buses b ON b.id = u.bus_id
@@ -43,6 +46,7 @@ exports.login = async (req, res) => {
     res.json({
       mensaje: 'Inicio de sesión exitoso',
       usuario: {
+        token: createSession(usuario.id),
         id: usuario.id,
         nombre: usuario.nombre,
         correo: usuario.correo,
@@ -53,7 +57,8 @@ exports.login = async (req, res) => {
         cooperativa_nombre: usuario.cooperativa_nombre,
         bus_id: usuario.bus_id,
         bus_disco: usuario.bus_disco,
-        bus_placa: usuario.bus_placa
+        bus_placa: usuario.bus_placa,
+        sucursal_id: usuario.sucursal_id
       },
       redirect: redirectPath
     });
@@ -209,7 +214,11 @@ exports.actualizarCooperativa = async (req, res) => {
 // ==========================================
 
 exports.getUsuarios = async (req, res) => {
-  const { cooperativa_id } = req.query;
+  if (req.user.rol !== 'SUPERADMIN' && req.query.cooperativa_id != null
+      && Number(req.query.cooperativa_id) !== req.user.cooperativa_id) {
+    return res.status(403).json({ error: 'No puedes consultar usuarios de otra cooperativa.' });
+  }
+  const cooperativa_id = req.user.rol === 'SUPERADMIN' ? req.query.cooperativa_id : req.user.cooperativa_id;
   try {
     let query = `
       SELECT u.id, u.nombre, u.correo, u.telefono, u.cedula, u.rol, u.creado_en, u.cooperativa_id, u.bus_id,
@@ -234,7 +243,14 @@ exports.getUsuarios = async (req, res) => {
 };
 
 exports.crearUsuario = async (req, res) => {
-  const { nombre, correo, telefono, cedula, rol, password, cooperativa_id, bus_id, creador_rol, creador_coop_id } = req.body;
+  const { nombre, correo, telefono, cedula, rol, password, cooperativa_id, bus_id, sucursal_id } = req.body;
+  const creador_rol = req.user.rol;
+  const creador_coop_id = req.user.cooperativa_id;
+
+  if (creador_rol === 'ADMIN_COOP' && (!['OFICINISTA', 'CHOFER'].includes(rol)
+      || (cooperativa_id != null && Number(cooperativa_id) !== creador_coop_id))) {
+    return res.status(403).json({ error: 'Solo puedes crear oficinistas y choferes de tu cooperativa.' });
+  }
 
   if (typeof nombre !== 'string' || !nombre.trim() || typeof correo !== 'string' || !correo.trim() || !rol) {
     return res.status(400).json({ error: 'Nombre, correo y rol son obligatorios' });
@@ -258,10 +274,23 @@ exports.crearUsuario = async (req, res) => {
   if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
     return res.status(400).json({ error: 'La contraseña debe tener entre 6 y 128 caracteres' });
   }
+  if (rol === 'OFICINISTA' && (!validarEmail(correo) || !validarPasswordSeguro(password))) {
+    return res.status(400).json({ error: 'Indica un correo válido y una contraseña de 8 a 128 caracteres con mayúscula, minúscula y número.' });
+  }
 
-  let coopId = cooperativa_id ? Number(cooperativa_id) : (creador_coop_id ? Number(creador_coop_id) : null);
+  const coopId = creador_rol === 'ADMIN_COOP' ? creador_coop_id : (cooperativa_id ? Number(cooperativa_id) : null);
   if ((rol === 'ADMIN_COOP' || rol === 'CHOFER' || rol === 'OFICINISTA') && (!Number.isInteger(coopId) || coopId < 1 || coopId > 2147483647)) {
     return res.status(400).json({ error: 'Selecciona una cooperativa válida' });
+  }
+
+  let sucursalId = null;
+  if (rol === 'OFICINISTA') {
+    if (!Number.isInteger(Number(sucursal_id)) || Number(sucursal_id) < 1 || Number(sucursal_id) > 2147483647) {
+      return res.status(400).json({ error: 'Asigna una sucursal al oficinista.' });
+    }
+    const branch = await db.query('SELECT id FROM sucursales WHERE id=$1 AND cooperativa_id=$2', [Number(sucursal_id), coopId]);
+    if (!branch.rows[0]) return res.status(403).json({ error: 'La sucursal no pertenece a tu cooperativa.' });
+    sucursalId = branch.rows[0].id;
   }
 
   // Validar que el bus pertenezca a la misma cooperativa del Gerente
@@ -280,9 +309,9 @@ exports.crearUsuario = async (req, res) => {
   try {
     const passHash = await hashPassword(password);
     const query = `
-      INSERT INTO usuarios (nombre, correo, telefono, cedula, rol, password_hash, cooperativa_id, bus_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, nombre, correo, telefono, cedula, rol, creado_en, cooperativa_id, bus_id
+      INSERT INTO usuarios (nombre, correo, telefono, cedula, rol, password_hash, cooperativa_id, bus_id, sucursal_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id, nombre, correo, telefono, cedula, rol, creado_en, cooperativa_id, bus_id, sucursal_id
     `;
     const result = await db.query(query, [
       nombre.trim(),
@@ -292,7 +321,8 @@ exports.crearUsuario = async (req, res) => {
       rol,
       passHash,
       coopId,
-      busAsignadoId
+      busAsignadoId,
+      sucursalId
     ]);
 
     res.status(201).json({

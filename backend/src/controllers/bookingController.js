@@ -94,7 +94,7 @@ exports.crearReserva = async (req, res) => {
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     const trip = await lockTrip(client, programacion_id);
-    if (!trip || (await tripSeats(client, trip, ids)).size !== ids.length) {
+    if (!trip || trip.estado !== 'PROGRAMADO' || (await tripSeats(client, trip, ids)).size !== ids.length) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Los asientos seleccionados no pertenecen al viaje' });
     }

@@ -30,38 +30,11 @@ exports.getFrecuencias = async (req, res) => {
   }
 };
 
-// Obtener hoja de ruta / viajes programados para una fecha
-// Obtener hoja de ruta / viajes programados para una fecha con auto-programación diaria
+// Consultar la programación publicada desde la matriz de hojas de ruta.
 exports.getViajesProgramados = async (req, res) => {
   const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
   try {
-    // 1. Verificar si ya existen viajes programados para la fecha solicitada
-    const checkQuery = await db.query(
-      'SELECT COUNT(*)::int as count FROM programacion_viajes WHERE fecha_viaje = $1',
-      [fecha]
-    );
-
-    // 2. Si no existen, auto-generar la hoja de ruta del día a partir de las frecuencias autorizadas por la ANT
-    if (checkQuery.rows[0].count === 0) {
-      await db.query(`
-        INSERT INTO programacion_viajes (frecuencia_id, bus_id, fecha_viaje, hora_salida_programada, estado)
-        SELECT 
-          f.id,
-          CASE 
-            WHEN f.id = 4 THEN 3 -- Pelileo Express (Bus 3 de 40 asientos)
-            WHEN f.id = 2 THEN 2 -- CITA Carcelén (Bus 2 de 41 asientos)
-            ELSE 1               -- CITA Quitumbe / Guayaquil (Bus 1 de 40 asientos)
-          END as bus_id,
-          $1::date,
-          f.hora_salida,
-          'PROGRAMADO'
-        FROM frecuencias f
-        WHERE f.activo = true
-        ON CONFLICT (bus_id, fecha_viaje, hora_salida_programada) DO NOTHING
-      `, [fecha]);
-    }
-
-    // 3. Consultar y retornar los viajes programados
+    // La asignación se guarda desde la matriz por personal autorizado (CR-08).
     const query = `
       SELECT pv.id as programacion_id, pv.fecha_viaje, pv.hora_salida_programada, pv.estado,
              f.origen, f.destino, f.precio_base, f.resolucion_ant, f.tipo_servicio,
@@ -74,7 +47,7 @@ exports.getViajesProgramados = async (req, res) => {
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id
       JOIN cooperativas c ON f.cooperativa_id = c.id
-      WHERE pv.fecha_viaje = $1
+      WHERE pv.fecha_viaje = $1 AND pv.estado <> 'CANCELADO'
       ORDER BY (f.es_destacada = true AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) DESC, pv.hora_salida_programada ASC
     `;
     const result = await db.query(query, [fecha]);
