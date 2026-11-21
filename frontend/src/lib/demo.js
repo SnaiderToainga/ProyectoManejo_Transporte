@@ -8,6 +8,7 @@ const trips = [
   { programacion_id: 3, origen: 'Ambato', destino: 'Guayaquil', hora_salida_programada: '10:00:00', precio_base: '9.00', capacidad: 40, tiene_bano_posterior: true, cooperativa_nombre: 'Flota Pelileo Express', numero_disco: 5, placa: 'DEMO-005', resolucion_ant: 'EJEMPLO', tipo_servicio: 'DIRECTO', estado: 'PROGRAMADO' },
 ];
 export const demoApi = {
+  frequencies: async () => trips,
   trips: async (date) => { selectedDate = date; return trips.map(trip => ({ ...trip, fecha_viaje: date })); },
   cooperatives: async () => [...new Set(trips.map(t => t.cooperativa_nombre))].map((nombre, i) => ({ id: i + 1, nombre })),
   seats: async (id) => {
