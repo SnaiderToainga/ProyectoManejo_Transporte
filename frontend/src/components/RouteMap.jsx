@@ -121,7 +121,8 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
 
     // Ajustar vista para abarcar todos los puntos
     try {
-      map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+      // El buscador puede desmontar el mapa inmediatamente al cambiar filtros.
+      map.fitBounds(polyline.getBounds(), { padding: [40, 40], animate: false });
     } catch {}
 
     return () => {

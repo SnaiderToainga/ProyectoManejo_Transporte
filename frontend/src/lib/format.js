@@ -98,6 +98,9 @@ export function matchesTrip(trip, filters = {}) {
   return (!trip.estado || trip.estado === 'PROGRAMADO')
     && valid
     && (!filters.cooperativa || trip.cooperativa_nombre === filters.cooperativa)
+    && (!filters.marca_chasis || normalize(trip.marca_chasis) === normalize(filters.marca_chasis))
+    && (!filters.carroceria || normalize(trip.carroceria) === normalize(filters.carroceria))
+    && (!filters.tipo_servicio || trip.tipo_servicio === filters.tipo_servicio)
     && (!filters.desde || hour >= filters.desde)
     && (!filters.hasta || hour <= filters.hasta);
 }
