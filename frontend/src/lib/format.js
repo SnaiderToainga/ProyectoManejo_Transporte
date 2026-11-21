@@ -1,9 +1,19 @@
-export const money = (value) => new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
+const decimalAmount = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false,
+});
+export const money = (value) => {
+  const amount = Number(value);
+  return `$ ${decimalAmount.format(Number.isFinite(amount) ? amount : 0)} USD`;
+};
 export const today = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
-export const shortTime = (value) => String(value || '').slice(0, 5);
+export const shortTime = (value) => {
+  const parts = String(value || '').trim().match(/^(\d{1,2}):(\d{1,2})(?::\d{2}(?:\.\d+)?)?$/);
+  if (!parts || Number(parts[1]) > 23 || Number(parts[2]) > 59) return '--:--';
+  return `${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`;
+};
 export const travelDate = (value) => {
   const part = String(value || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(part)

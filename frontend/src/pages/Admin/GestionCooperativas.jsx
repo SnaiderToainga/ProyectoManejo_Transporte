@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { money, shortTime } from '../../lib/format.js';
 import {
   Building2,
   Bus,
@@ -1196,7 +1197,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                 )}
 
                 <div>
-                  <label style={styles.formLabel}>Resolución ANT (Formato Oficial)</label>
+                    <label style={styles.formLabel}>Resolución ANT (formato oficial)</label>
                   <input
                     type="text"
                     required
@@ -1222,7 +1223,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                     }}>
                       {esResolucionValida(formFrecuencia.resolucion_ant)
                         ? '✓ Resolución administrativa ANT con formato válido'
-                        : '⚠️ Use prefijo oficial ANT-, RES- o RESOL- (ej: ANT-RES-2026-001)'}
+                        : '⚠️ Usa el prefijo oficial ANT-, RES- o RESOL- (p. ej., ANT-RES-2026-001).'}
                     </span>
                   )}
                 </div>
@@ -1253,7 +1254,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <div>
-                    <label style={styles.formLabel}>Hora Salida</label>
+                    <label style={styles.formLabel}>Hora de salida</label>
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                       <Clock size={16} style={{ position: 'absolute', left: 10, color: '#94A3B8' }} />
                       <input
@@ -1266,7 +1267,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                     </div>
                   </div>
                   <div>
-                    <label style={styles.formLabel}>Tarifa Base ($)</label>
+                    <label style={styles.formLabel}>Tarifa base (USD)</label>
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                       <DollarSign size={16} style={{ position: 'absolute', left: 10, color: '#94A3B8' }} />
                       <input
@@ -1539,12 +1540,12 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                           )}
                           {frec.patrocinio_fin && (
                             <div style={{ fontSize: '0.68rem', color: '#B45309', marginTop: '1px' }}>
-                              Vence: {new Date(frec.patrocinio_fin).toLocaleDateString()} {new Date(frec.patrocinio_fin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              Vence: {new Date(frec.patrocinio_fin).toLocaleDateString()} {new Date(frec.patrocinio_fin).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
                             </div>
                           )}
                         </td>
-                        <td style={styles.td}>{frec.hora_salida}</td>
-                        <td style={styles.td}><strong style={{ color: '#059669' }}>${Number(frec.precio_base).toFixed(2)}</strong></td>
+                        <td style={styles.td}>{shortTime(frec.hora_salida)}</td>
+                        <td style={styles.td}><strong style={{ color: '#059669' }}>{money(frec.precio_base)}</strong></td>
                         <td style={styles.td}>
                           <span style={frec.tipo_servicio === 'DIRECTO' ? styles.badgeActive : styles.badgeInactive}>
                             {frec.tipo_servicio}
