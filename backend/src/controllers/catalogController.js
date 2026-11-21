@@ -42,11 +42,29 @@ exports.getViajesProgramados = async (req, res) => {
              f.patrocinio_inicio, f.patrocinio_fin,
              f.paradas_intermedias,
              b.numero_disco, b.placa, b.capacidad, b.tiene_bano_posterior,
+             NULLIF(BTRIM(to_jsonb(b)->>'marca_chasis'), '') AS marca_chasis,
+             NULLIF(BTRIM(to_jsonb(b)->>'carroceria'), '') AS carroceria,
+             disponibilidad.asientos_disponibles,
+             disponibilidad.asientos_disponibles_normal,
+             disponibilidad.asientos_disponibles_vip,
              c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM programacion_viajes pv
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id
       JOIN cooperativas c ON f.cooperativa_id = c.id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS asientos_disponibles,
+               COUNT(*) FILTER (WHERE a.categoria = 'NORMAL')::int AS asientos_disponibles_normal,
+               COUNT(*) FILTER (WHERE a.categoria = 'VIP')::int AS asientos_disponibles_vip
+        FROM asientos a
+        WHERE a.bus_id = b.id AND a.activo IS DISTINCT FROM false
+          AND NOT EXISTS (
+            SELECT 1 FROM detalle_boletos db
+            JOIN reservas r ON r.id = db.reserva_id
+            WHERE db.asiento_id = a.id AND r.programacion_id = pv.id
+              AND ${occupiedReservation}
+          )
+      ) disponibilidad ON true
       WHERE pv.fecha_viaje = $1 AND pv.estado <> 'CANCELADO'
       ORDER BY (f.es_destacada = true AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) DESC, pv.hora_salida_programada ASC
     `;
@@ -81,7 +99,7 @@ exports.getAsientosPorViaje = async (req, res) => {
             END as estado_ocupacion
       FROM programacion_viajes pv
       JOIN asientos a ON a.bus_id = pv.bus_id
-      WHERE pv.id = $1
+      WHERE pv.id = $1 AND a.activo IS DISTINCT FROM false
       ORDER BY a.numero_asiento ASC
     `;
     const result = await db.query(query, [programacionId]);
