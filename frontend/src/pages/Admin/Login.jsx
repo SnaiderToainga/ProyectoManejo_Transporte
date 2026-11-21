@@ -35,7 +35,7 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!correo.trim() || !password.trim()) {
-      setError('Por favor complete todos los campos');
+      setError('Por favor, completa todos los campos.');
       return;
     }
 
@@ -87,7 +87,7 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
           <div style={styles.logoBadge}>
             <BusFront size={32} color="#1E40AF" />
           </div>
-          <h2 style={styles.title}>Portal Administrativo</h2>
+          <h2 style={styles.title}>Portal administrativo</h2>
           <p style={styles.subtitle}>Sistema de Transporte Interprovincial UTA</p>
         </div>
 
@@ -111,14 +111,14 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
           <div style={styles.alertSuccess}>
             <UserCheck size={18} color="#065F46" />
             <span style={{ fontSize: '0.875rem', color: '#065F46' }}>
-              Acceso concedido como <strong>{rolDetectado}</strong>. Redirigiendo...
+              Acceso concedido como <strong>{rolDetectado}</strong>. Redirigiendo…
             </span>
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Correo Electrónico</label>
+            <label style={styles.label}>Correo electrónico</label>
             <div style={styles.inputWrapper}>
               <Mail size={18} style={styles.inputIcon} />
               <input
@@ -156,9 +156,9 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
               cursor: cargando ? 'not-allowed' : 'pointer'
             }}
           >
-            {cargando ? 'Verificando...' : (
+            {cargando ? 'Verificando…' : (
               <>
-                <span>Ingresar al Sistema</span>
+                <span>Ingresar al sistema</span>
                 <ArrowRight size={18} />
               </>
             )}

@@ -240,7 +240,7 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                   <div style={styles.ticketRoute}>AMBATO ➔ QUITO (QUITUMBE)</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={styles.ticketLabel}>CÓDIGO RESERVA</span>
+                  <span style={styles.ticketLabel}>CÓDIGO DE RESERVA</span>
                   <div style={styles.ticketCode}>RES-9F3A1C</div>
                 </div>
               </div>
@@ -249,12 +249,12 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
 
               <div style={styles.ticketRow}>
                 <div>
-                  <span style={styles.ticketLabel}>FECHA & HORA</span>
-                  <div style={styles.ticketValue}>15/10/2026 | 07:00 AM</div>
+                  <span style={styles.ticketLabel}>FECHA Y HORA</span>
+                  <div style={styles.ticketValue}>15/10/2026 | 07:00</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={styles.ticketLabel}>BUS N° / DISCO</span>
-                  <div style={styles.ticketValue}>Disco 15 (40 Asientos)</div>
+                  <span style={styles.ticketLabel}>BUS N.º / DISCO</span>
+                  <div style={styles.ticketValue}>Disco 15 (40 asientos)</div>
                 </div>
               </div>
 
@@ -264,12 +264,12 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                 <div>
                   <span style={styles.ticketLabel}>PASAJERO</span>
                   <div style={styles.ticketValue}>Joel (Estudiante UTA)</div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>CI: 1803456789</div>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>Cédula: 1803456789</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={styles.ticketLabel}>ASIENTO ASIGNADO</span>
                   <div style={{ ...styles.seatBadge, color: color }}>
-                    N° 04 (VIP)
+                    N.º 04 (VIP)
                   </div>
                 </div>
               </div>

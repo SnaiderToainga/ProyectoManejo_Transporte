@@ -339,7 +339,7 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
                     />
                   </label>
                   <label>
-                    Tipo de Tarifa / Descuento legal
+                    Tipo de tarifa / descuento legal
                     <select
                       name={`tipo-${i}`}
                       value={passenger.tipo_pasajero || 'NORMAL'}
@@ -347,17 +347,17 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
                       disabled={busy}
                       style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', background: '#ffffff' }}
                     >
-                      <option value="NORMAL">Tarifa Regular (100%)</option>
-                      <option value="TERCERA_EDAD">Tercera Edad (50% desc. Ley)</option>
-                      <option value="NIÑO">Niño / Menor de edad (50% desc.)</option>
-                      <option value="DISCAPACIDAD">Persona con Discapacidad (50% desc.)</option>
+                      <option value="NORMAL">Tarifa regular (100 %)</option>
+                      <option value="TERCERA_EDAD">Tercera edad (50 % de descuento)</option>
+                      <option value="NIÑO">Niño / menor de edad (50 % de descuento)</option>
+                      <option value="DISCAPACIDAD">Persona con discapacidad (50 % de descuento)</option>
                     </select>
                   </label>
                 </fieldset>
               ))}
 
               <p className="small-copy">
-                <LockKeyhole size={13} className="inline-icon" /> Descuentos del 50% aplicados conforme a la normativa ecuatoriana de transporte. Se valida con la cédula al abordar.
+                <LockKeyhole size={13} className="inline-icon" /> Descuentos del 50 % aplicados conforme a la normativa ecuatoriana de transporte. Se valida con la cédula al abordar.
               </p>
 
               {error && <p role="alert" className="inline-error">{error}</p>}
@@ -398,7 +398,7 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
                     Asiento {seat.numero_asiento} · {seatCategory(seat)}
                     {isDiscount && (
                       <span className="pill text-xs ml-1" style={{ backgroundColor: '#dcfce7', color: '#166534', fontWeight: 'bold' }}>
-                        -50%
+                        -50 %
                       </span>
                     )}
                   </span>
@@ -412,7 +412,7 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
             <strong>{money(reservation?.total ?? total)}</strong>
           </div>
           <p className="small-copy">
-            Tarifas preferenciales del 50% aplicadas de forma directa. Se requerirá documento habilitante al abordar.
+            Tarifas preferenciales del 50 % aplicadas de forma directa. Se requerirá documento habilitante al abordar.
           </p>
           {reservation && (
             <button className="button secondary full-width" onClick={() => onConsult(reservation.codigo_reserva)}>
