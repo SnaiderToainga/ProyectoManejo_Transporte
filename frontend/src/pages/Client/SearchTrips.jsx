@@ -1,22 +1,36 @@
 import RouteMap from '../../components/RouteMap.jsx';
-import { useEffect, useState } from 'react';
-import { ArrowRight, BusFront, CalendarDays, MapPin, Search, SlidersHorizontal } from 'lucide-react';
+import CantonAutocomplete from '../../components/CantonAutocomplete.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowRight, BusFront, CalendarDays, Search, SlidersHorizontal, Users } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
 import { calculateSegmentPrice, matchesTrip, money, resolveTripSegment, shortTime, today, travelDate } from '../../lib/format.js';
+import { cantonOptions, countAvailableSeats, MAX_PASSENGERS, passengerCount, searchOptions, tripAvailability } from '../../lib/tripSearch.js';
 
-const initialFilters = () => ({ fecha: today(), origen: '', destino: '', cooperativa: '', desde: '', hasta: '', categoria: '' });
+const initialFilters = () => ({ fecha: today(), origen: '', destino: '', cooperativa: '', desde: '', hasta: '', categoria: '', pasajeros: '1', marca_chasis: '', carroceria: '', tipo_servicio: '' });
 
 export default function SearchTrips({ onChoose }) {
   const [filters, setFilters] = useState(initialFilters);
   const [query, setQuery] = useState(initialFilters);
   const [trips, setTrips] = useState([]);
   const [cooperatives, setCooperatives] = useState([]);
+  const [frequencies, setFrequencies] = useState([]);
+  const [catalogTrips, setCatalogTrips] = useState([]);
   const [customSegments, setCustomSegments] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [validation, setValidation] = useState('');
+  const routes = useMemo(() => [...frequencies, ...catalogTrips], [frequencies, catalogTrips]);
+  const origins = useMemo(() => cantonOptions(routes, 'origen'), [routes]);
+  const destinations = useMemo(() => cantonOptions(routes, 'destino'), [routes]);
+  const chassis = useMemo(() => searchOptions(catalogTrips, 'marca_chasis'), [catalogTrips]);
+  const bodyworks = useMemo(() => searchOptions(catalogTrips, 'carroceria'), [catalogTrips]);
+  const operators = useMemo(() => searchOptions([
+    ...cooperatives, ...catalogTrips.map(trip => ({ nombre: trip.cooperativa_nombre }))
+  ], 'nombre'), [cooperatives, catalogTrips]);
   useEffect(() => {
     const controller = new AbortController();
-    api.cooperatives(controller.signal).then(setCooperatives).catch(() => {});
+    api.cooperatives(controller.signal).then(rows => { if (!controller.signal.aborted) setCooperatives(rows); }).catch(() => {});
+    api.frequencies(controller.signal).then(rows => { if (!controller.signal.aborted) setFrequencies(rows); }).catch(() => {});
     return () => controller.abort();
   }, []);
   useEffect(() => {
@@ -26,14 +40,16 @@ export default function SearchTrips({ onChoose }) {
     (async () => {
       try {
         const all = await api.trips(query.fecha, controller.signal);
+        if (controller.signal.aborted) return;
+        setCatalogTrips(all);
         let matching = all.filter(trip => matchesTrip(trip, query));
-        if (query.categoria) {
-          const availability = await Promise.all(matching.map(async trip => {
-            const seats = await api.seats(trip.programacion_id, controller.signal);
-            return seats.some(seat => seat.categoria === query.categoria && seat.estado_ocupacion === 'DISPONIBLE');
-          }));
-          matching = matching.filter((_, i) => availability[i]);
-        }
+        matching = await Promise.all(matching.map(async trip => {
+          // main publica los totales en una consulta. Compatibilidad con APIs anteriores.
+          const published = tripAvailability(trip, query.categoria);
+          const available = published ?? countAvailableSeats(await api.seats(trip.programacion_id, controller.signal), query.categoria);
+          return { ...trip, disponibles_busqueda: available };
+        }));
+        matching = matching.filter(trip => trip.disponibles_busqueda >= passengerCount(query.pasajeros));
         matching.sort((a, b) => (b.es_destacada ? 1 : 0) - (a.es_destacada ? 1 : 0));
         if (!controller.signal.aborted) setTrips(matching);
       } catch (err) { if (!controller.signal.aborted) { setTrips([]); setError(err.message); } }
@@ -41,17 +57,23 @@ export default function SearchTrips({ onChoose }) {
     })();
     return () => controller.abort();
   }, [query]);
-  const change = (event) => setFilters({ ...filters, [event.target.name]: event.target.value });
+  const change = (event) => {
+    const { name, value } = event.target;
+    setFilters(previous => ({ ...previous, [name]: value }));
+    setValidation('');
+  };
   const submit = (event) => {
     event.preventDefault();
-    if (filters.desde && filters.hasta && filters.desde > filters.hasta) { setError('La hora inicial debe ser anterior a la hora final.'); return; }
+    if (!passengerCount(filters.pasajeros)) { setValidation(`Indica entre 1 y ${MAX_PASSENGERS} pasajeros, sin decimales.`); return; }
+    if (filters.desde && filters.hasta && filters.desde > filters.hasta) { setValidation('La hora inicial debe ser anterior a la hora final.'); return; }
+    setValidation('');
     setQuery({ ...filters });
   };
 
-  const handleSegmentChange = (progId, totalLen, field, val) => {
+  const handleSegmentChange = (progId, totalLen, field, val, segment) => {
     const numVal = Number(val);
     setCustomSegments(prev => {
-      const current = prev[progId] || { startIdx: 0, endIdx: totalLen - 1 };
+      const current = prev[progId] || { startIdx: segment.startIdx, endIdx: segment.endIdx };
       if (field === 'startIdx') {
         const nextEnd = current.endIdx <= numVal ? Math.min(totalLen - 1, numVal + 1) : current.endIdx;
         return { ...prev, [progId]: { startIdx: numVal, endIdx: nextEnd } };
@@ -66,17 +88,23 @@ export default function SearchTrips({ onChoose }) {
     </section>
     <form onSubmit={submit} className="search-panel" aria-label="Buscar viajes">
       <div className="search-main">
-        <label><span><MapPin size={15} /> Origen</span><input name="origen" value={filters.origen} onChange={change} placeholder="¿De dónde sales?" maxLength={80} /></label>
-        <label><span><MapPin size={15} /> Destino</span><input name="destino" value={filters.destino} onChange={change} placeholder="¿A dónde vamos?" maxLength={80} /></label>
+        <CantonAutocomplete name="origen" label="Origen" value={filters.origen} options={origins} onChange={change} placeholder="¿De dónde sales?" />
+        <CantonAutocomplete name="destino" label="Destino" value={filters.destino} options={destinations} onChange={change} placeholder="¿A dónde vamos?" />
         <label><span><CalendarDays size={15} /> Fecha de viaje</span><input name="fecha" type="date" required min={today()} value={filters.fecha} onChange={change} /></label>
+        <label><span><Users size={15} /> Pasajeros</span><input name="pasajeros" type="number" required min="1" max={MAX_PASSENGERS} step="1" value={filters.pasajeros} onChange={change} /></label>
         <button className="button primary search-button" disabled={loading}><Search size={18} />{loading ? 'Buscando…' : 'Buscar viajes'}</button>
       </div>
       <div className="search-filters"><span className="filter-heading"><SlidersHorizontal size={16} /> Filtrar por</span>
-        <label><span className="sr-only">Cooperativa</span><select aria-label="Cooperativa" name="cooperativa" value={filters.cooperativa} onChange={change}><option value="">Todas las cooperativas</option>{cooperatives.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>
+        <label><span className="sr-only">Cooperativa</span><select aria-label="Cooperativa" name="cooperativa" value={filters.cooperativa} onChange={change}><option value="">Todas las cooperativas</option>{operators.map(nombre => <option key={nombre} value={nombre}>{nombre}</option>)}</select></label>
         <label><span className="sr-only">Tipo de asiento</span><select aria-label="Tipo de asiento" name="categoria" value={filters.categoria} onChange={change}><option value="">Cualquier asiento</option><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label>
+        <label><span className="sr-only">Marca de chasis</span><select aria-label="Marca de chasis" name="marca_chasis" value={filters.marca_chasis} onChange={change}><option value="">Cualquier marca de chasis</option>{searchOptions([...chassis.map(marca_chasis => ({ marca_chasis })), { marca_chasis: filters.marca_chasis }], 'marca_chasis').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label><span className="sr-only">Carrocería</span><select aria-label="Carrocería" name="carroceria" value={filters.carroceria} onChange={change}><option value="">Cualquier carrocería</option>{searchOptions([...bodyworks.map(carroceria => ({ carroceria })), { carroceria: filters.carroceria }], 'carroceria').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label><span className="sr-only">Tipo de viaje</span><select aria-label="Tipo de viaje" name="tipo_servicio" value={filters.tipo_servicio} onChange={change}><option value="">Todos los tipos de viaje</option><option value="DIRECTO">Directo</option><option value="PARADAS">Con paradas</option></select></label>
         <label className="time-filter"><span>Desde</span><input type="time" name="desde" value={filters.desde} onChange={change} /></label>
         <label className="time-filter"><span>Hasta</span><input type="time" name="hasta" value={filters.hasta} onChange={change} /></label>
       </div>
+      {!loading && catalogTrips.length > 0 && (!chassis.length || !bodyworks.length) && <p className="search-help">Los filtros de chasis y carrocería muestran únicamente marcas registradas para los viajes de la fecha consultada.</p>}
+      {validation && <p className="inline-error search-help" role="alert">{validation}</p>}
     </form>
     <section className="results" aria-labelledby="results-heading" aria-busy={loading}>
       <div className="section-heading"><div><p className="eyebrow">ELIGE CÓMO LLEGAR</p><h2 id="results-heading">Viajes disponibles</h2></div><span className="muted">{travelDate(query.fecha)}</span></div>
@@ -150,7 +178,7 @@ export default function SearchTrips({ onChoose }) {
                         <span style={{ color: '#64748B' }}>Subida:</span>
                         <select
                           value={startIdx}
-                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'startIdx', e.target.value)}
+                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'startIdx', e.target.value, seg)}
                           style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', fontSize: '0.82rem' }}
                         >
                           {itinerary.slice(0, -1).map((stop, idx) => (
@@ -163,7 +191,7 @@ export default function SearchTrips({ onChoose }) {
                         <span style={{ color: '#64748B' }}>Bajada:</span>
                         <select
                           value={endIdx}
-                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'endIdx', e.target.value)}
+                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'endIdx', e.target.value, seg)}
                           style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', fontSize: '0.82rem' }}
                         >
                           {itinerary.map((stop, idx) => idx > startIdx ? (
@@ -183,6 +211,9 @@ export default function SearchTrips({ onChoose }) {
                       <span> 📍 Paradas: {trip.paradas_intermedias.join(' ➔ ')}</span>
                     )}
                     <span>{trip.capacidad} asientos</span>
+                    <span>{trip.disponibles_busqueda} disponibles{query.categoria ? ` (${query.categoria === 'VIP' ? 'VIP' : 'Normal'})` : ''} · {query.pasajeros} {Number(query.pasajeros) === 1 ? 'pasajero' : 'pasajeros'}</span>
+                    <span>Chasis: {trip.marca_chasis || 'No registrado'}</span>
+                    <span>Carrocería: {trip.carroceria || 'No registrada'}</span>
                     <span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span>
                     <span>Normal / VIP</span>
                   </div>
@@ -204,6 +235,7 @@ export default function SearchTrips({ onChoose }) {
                         ruta_completa_origen: trip.origen,
                         ruta_completa_destino: trip.destino,
                         es_tramo_intermedio: esTramo,
+                        pasajeros_solicitados: passengerCount(query.pasajeros),
                         tramo: { inicio: startIdx, fin: endIdx }
                       }, query.categoria)}
                     >
