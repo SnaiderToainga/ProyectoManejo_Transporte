@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { planningRequest } from '../../lib/planningApi.js';
-import { today } from '../../lib/format.js';
+import { shortTime, today } from '../../lib/format.js';
 
 export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChanged }) {
   const [group, setGroup] = useState({ clase: 'BUSES', nombre: '', tipo_operacion: 'INTERPROVINCIAL', inicio_ciclo: today(), miembros: [] });
@@ -50,7 +50,7 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
               <input type="checkbox" checked={group.miembros.includes(item.id)} onChange={e => setGroup({ ...group,
                 miembros: e.target.checked ? [...group.miembros, item.id] : group.miembros.filter(id => id !== item.id)
               })} />
-              {group.clase === 'BUSES' ? `Unidad #${item.numero_disco} · ${item.placa} · ${item.estado}` : `${item.origen} → ${item.destino} · ${item.hora_salida.slice(0, 5)}`}
+              {group.clase === 'BUSES' ? `Unidad #${item.numero_disco} · ${item.placa} · ${item.estado}` : `${item.origen} → ${item.destino} · ${shortTime(item.hora_salida)}`}
             </label>)}
             {!items.some(item => !item.grupo_id) && <p>No hay miembros libres para esta clase de grupo.</p>}
           </div>

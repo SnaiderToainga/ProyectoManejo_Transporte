@@ -1,5 +1,6 @@
 import { officeRequest } from '../../lib/officeApi.js';
 import { useEffect, useState } from 'react';
+import { money, shortTime } from '../../lib/format.js';
 
 const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/api\/?$/, '');
 
@@ -50,11 +51,11 @@ const ValidacionComprobantes = ({ usuario }) => {
     }
   };
 
-  if (loading) return <div className="text-center p-4">Cargando comprobantes...</div>;
+  if (loading) return <div className="text-center p-4">Cargando comprobantes…</div>;
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4 text-gray-800">Bandeja de Comprobantes Pendientes</h2>
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">Bandeja de comprobantes pendientes</h2>
       
       {error ? (
         <div className="text-red-700" role="alert">
@@ -70,7 +71,7 @@ const ValidacionComprobantes = ({ usuario }) => {
           <table className="min-w-full bg-white border border-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Reserva ID</th>
+                <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">ID de reserva</th>
                 <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Cliente</th>
                 <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Ruta</th>
                 <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Total</th>
@@ -88,9 +89,9 @@ const ValidacionComprobantes = ({ usuario }) => {
                   </td>
                   <td className="py-2 px-4 border-b text-sm text-gray-700">
                     {reserva.origen} → {reserva.destino}
-                    <div className="text-xs text-gray-500">{reserva.hora_salida}</div>
+                    <div className="text-xs text-gray-500">{shortTime(reserva.hora_salida)}</div>
                   </td>
-                  <td className="py-2 px-4 border-b text-sm text-gray-700">${reserva.total_pagado}</td>
+                  <td className="py-2 px-4 border-b text-sm text-gray-700">{money(reserva.total_pagado)}</td>
                   <td className="py-2 px-4 border-b text-sm">
                     {reserva.comprobante_url ? (
                       <button 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import jsQR from 'jsqr';
+import { shortTime } from '../../lib/format.js';
 import { 
   Bus, QrCode, CheckCircle2, AlertTriangle, XCircle, Play, CheckCheck, 
   RefreshCw, Users, Shield, ArrowRight, UserCheck, PhoneCall, Volume2, 
@@ -627,7 +628,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                       {enRuta ? '● EN RUTA' : finalizado ? '✓ FINALIZADO' : '⏱ PROGRAMADO'}
                     </span>
                     <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
-                      {v.hora_salida_programada?.slice(0, 5)}
+                      {shortTime(v.hora_salida_programada)}
                     </span>
                   </div>
 
@@ -676,7 +677,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                 {viajeSeleccionado.origen} ➔ {viajeSeleccionado.destino}
               </h3>
               <div style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <span>🕒 Salida: <strong>{viajeSeleccionado.hora_salida_programada?.slice(0, 5)}</strong></span>
+                <span>🕒 Salida: <strong>{shortTime(viajeSeleccionado.hora_salida_programada)}</strong></span>
                 <span>🚌 Bus #{viajeSeleccionado.numero_disco} ({viajeSeleccionado.placa})</span>
                 <span>🏢 {viajeSeleccionado.cooperativa_nombre}</span>
               </div>

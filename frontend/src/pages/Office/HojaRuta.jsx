@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { planningRequest } from '../../lib/planningApi.js';
-import { today } from '../../lib/format.js';
+import { shortTime, today } from '../../lib/format.js';
 import PlanningSetup from './PlanningSetup.jsx';
 import './planning.css';
 
@@ -181,14 +181,14 @@ export default function HojaRuta({ usuario }) {
               <caption>Frecuencias por fecha · {matrix.grupo.nombre}</caption>
               <thead><tr><th scope="col">Frecuencia / Fecha</th>{matrix.fechas.map(date => <th scope="col" key={date}>{date}</th>)}</tr></thead>
               <tbody>{matrix.frecuencias.map(f => <tr key={f.id}>
-                <th scope="row">{f.origen} → {f.destino}<small>{f.hora_salida.slice(0, 5)} · {f.resolucion_ant}</small></th>
+                <th scope="row">{f.origen} → {f.destino}<small>{shortTime(f.hora_salida)} · {f.resolucion_ant}</small></th>
                 {matrix.fechas.map(date => {
                   const key = cellKey(f.id, date);
                   const cell = draft[key];
                   if (!cell) return <td key={date} />;
                   const changed = cell.bus_id !== cell.original_bus_id;
                   return <td key={date} className={changed ? 'planning-changed' : ''}>
-                    <select aria-label={`Bus para ${f.origen} a ${f.destino} ${f.hora_salida.slice(0, 5)} el ${date}`}
+                    <select aria-label={`Bus para ${f.origen} a ${f.destino} ${shortTime(f.hora_salida)} el ${date}`}
                       disabled={saving || date < today() || cell.estado !== 'PROGRAMADO'} value={cell.bus_id || ''}
                       onChange={e => setDraft({ ...draft, [key]: { ...cell, bus_id: Number(e.target.value) || null, averia: Boolean(cell.original_bus_id && e.target.value) } })}>
                       <option value="">Sin asignar</option>
