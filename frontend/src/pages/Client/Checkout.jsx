@@ -6,7 +6,8 @@ import { api, isDemo } from '../../lib/api.js';
 import { money, shortTime, travelDate } from '../../lib/format.js';
 import { seatPrice, seatCategory } from '../../lib/seats.js';
 import { rememberCode, reservationStatus, secondsRemaining } from '../../lib/reservation.js';
-import { passengerError, receiptError } from '../../lib/validation.js';
+import { passengerError, receiptError, validarCedulaEcuador } from '../../lib/validation.js';
+import { hostedPaymentUrl } from '../../lib/purchaseFlow.js';
 import { discountedPrice } from '../../lib/ticketDetails.js';
 
 export function PaymentPanel({ reservation, onUpdate, onDone }) {
@@ -15,6 +16,8 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [bank, setBank] = useState(null);
+  const [method, setMethod] = useState('TRANSFERENCIA');
+  const [paymentUrl, setPaymentUrl] = useState('');
   const sending = useRef(false);
   const inputRef = useRef(null);
   const status = reservationStatus(reservation, now);
@@ -64,7 +67,7 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
     setBusy(true);
     setError('');
     try {
-      const result = await api.receipt(reservation.codigo_reserva, file);
+      const result = await api.receipt(reservation.codigo_reserva, file, method);
       const next = { ...reservation, ...result.reserva };
       onUpdate(next);
       setFile(null);
@@ -76,6 +79,20 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
       sending.current = false;
       setBusy(false);
     }
+  };
+
+  const payByCard = async () => {
+    if (sending.current || paymentUrl) return;
+    if (reservationStatus(reservation) !== 'pending') { setNow(Date.now()); return; }
+    sending.current = true; setBusy(true); setError('');
+    try {
+      const result = await api.cardPayment(reservation.codigo_reserva);
+      const url = hostedPaymentUrl(result.checkout_url);
+      if (!url) throw new Error('La pasarela no devolvió un enlace seguro. No se ha confirmado ningún pago.');
+      setPaymentUrl(url);
+    } catch (err) {
+      setError([404, 501, 503].includes(err.status) ? 'El pago con tarjeta todavía no está disponible. Puedes utilizar depósito o transferencia.' : err.message);
+    } finally { sending.current = false; setBusy(false); }
   };
 
   const statuses = {
@@ -97,6 +114,20 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
       {status === 'pending' ? (
         <>
           <ReservationTimer expiresAt={reservation.expira_en} onExpire={() => setNow(Date.now())} />
+          <fieldset className="cr01-payment-methods" disabled={busy}>
+            <legend>Método de pago</legend>
+            {[['TRANSFERENCIA', 'Transferencia bancaria'], ['DEPOSITO', 'Depósito bancario'], ['TARJETA', 'Tarjeta de débito o crédito']].map(([value, label]) =>
+              <label key={value}><input type="radio" name="metodo-pago" checked={method === value} onChange={() => { setMethod(value); setError(''); }} />{label}</label>)}
+          </fieldset>
+          {method === 'TARJETA' ? <div className="cr01-card-payment">
+            <h2>Pago con tarjeta</h2>
+            <p>Importe de la reserva: <strong>{money(reservation.total)}</strong>. Ingresa los datos de tu tarjeta únicamente en la pasarela de pago.</p>
+            {paymentUrl ? <a className="button primary" href={paymentUrl} target="_blank" rel="noopener noreferrer">Continuar en la pasarela</a>
+              : <button type="button" className="button primary" disabled={busy || isDemo} onClick={payByCard}>{busy ? 'Conectando…' : 'Pagar con tarjeta'}</button>}
+            <p className="small-copy">El boleto estará disponible cuando la cooperativa confirme el pago. Puedes consultar el estado con tu código de reserva.</p>
+            {isDemo && <p role="status">El pago con tarjeta no está disponible en la demostración.</p>}
+            {error && <p role="alert" className="inline-error">{error}</p>}
+          </div> : <>
           <h2>Envía tu comprobante</h2>
           <p className="small-copy">
             Transferencia o depósito por <strong>{money(reservation.total)}</strong> a la cooperativa de tu viaje.
@@ -140,6 +171,7 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
               <ArrowRight size={16} />
             </button>
           </form>
+          </>}
         </>
       ) : (
         <div className={`notice ${['expired', 'rejected', 'cancelled'].includes(status) ? 'error' : ''}`} role="status">
@@ -157,21 +189,46 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
   );
 }
 
-export default function Checkout({ trip, seats, onBack, onConsult }) {
+export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraftChange, customer, customerToken, onAccount, onHistory, onReserved }) {
   const [passengers, setPassengers] = useState(() =>
-    seats.map(seat => ({
+    seats.map(seat => draft?.passengers?.find(passenger => passenger.asiento_id === seat.asiento_id) || ({
       asiento_id: seat.asiento_id,
       nombre: '',
       cedula: '',
       tipo_pasajero: 'NORMAL'
     }))
   );
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(draft?.email || '');
+  const [lookupMessages, setLookupMessages] = useState({});
+  const [lookingUp, setLookingUp] = useState({});
+  const lookupControllers = useRef({});
+  const automaticLookup = useRef(new Set());
   const [reservation, setReservation] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const submitting = useRef(false);
+  useEffect(() => { onDraftChange?.({ email, passengers }); }, [email, passengers, onDraftChange]);
+  useEffect(() => {
+    if (!customer) return;
+    setEmail(previous => previous || customer.email || '');
+    setPassengers(previous => previous.map((passenger, index) => index === 0 && !passenger.cedula && !passenger.nombre
+      ? { ...passenger, nombre: customer.nombre || '', cedula: customer.cedula || '' } : passenger));
+  }, [customer]);
+  useEffect(() => () => Object.values(lookupControllers.current).forEach(controller => controller.abort()), []);
+  const passengerIdentities = passengers.map(passenger => passenger.cedula).join('|');
+  useEffect(() => {
+    if (!customerToken) return;
+    const timer = setTimeout(() => {
+      passengers.forEach((passenger, index) => {
+        const key = `${index}:${passenger.cedula}`;
+        if (validarCedulaEcuador(passenger.cedula) && !automaticLookup.current.has(key)) {
+          automaticLookup.current.add(key); lookupPassenger(index, true);
+        }
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [customerToken, passengerIdentities]);
 
   // Función de cálculo con tarifa preferencial (50% de ley para Tercera Edad, Niños y Discapacidad)
   const getPassengerPrice = (seat, tipo) => {
@@ -185,9 +242,36 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
   const total = seats.reduce((sum, seat, i) => sum + getPassengerPrice(seat, passengers[i]?.tipo_pasajero), 0);
 
   const updatePassenger = (index, key, value) => {
+    lookupControllers.current[index]?.abort();
+    setLookingUp(previous => ({ ...previous, [index]: false }));
+    setLookupMessages(previous => ({ ...previous, [index]: '' }));
     setPassengers(previous =>
       previous.map((passenger, i) => (i === index ? { ...passenger, [key]: value } : passenger))
     );
+  };
+
+  const lookupPassenger = async (index, automatic = false) => {
+    const passenger = passengers[index];
+    if (!validarCedulaEcuador(passenger.cedula)) {
+      setLookupMessages(previous => ({ ...previous, [index]: 'Ingresa primero una cédula ecuatoriana válida.' })); return;
+    }
+    lookupControllers.current[index]?.abort();
+    const controller = new AbortController(); lookupControllers.current[index] = controller;
+    setLookingUp(previous => ({ ...previous, [index]: true }));
+    try {
+      const result = await api.passenger(passenger.cedula, customerToken, controller.signal);
+      if (controller.signal.aborted) return;
+      if (!result.cliente?.nombre || result.cliente.cedula !== passenger.cedula) throw new Error('No se encontraron datos coincidentes. Puedes ingresarlos manualmente.');
+      setPassengers(previous => previous.map((current, i) => i === index && current.cedula === passenger.cedula && current.nombre === passenger.nombre && (!automatic || !current.nombre)
+        ? { ...current, nombre: result.cliente.nombre } : current));
+      if (index === 0 && typeof result.cliente.email === 'string') setEmail(previous => previous || result.cliente.email);
+      // El descuento se confirma por el comprador, no se infiere de la cédula.
+      setLookupMessages(previous => ({ ...previous, [index]: 'Nombre precargado. Revisa los datos antes de reservar.' }));
+    } catch (err) {
+      if (!controller.signal.aborted) setLookupMessages(previous => ({ ...previous, [index]: err.status === 404 ? 'No se encontraron datos disponibles. Puedes ingresarlos manualmente.' : err.message }));
+    } finally {
+      if (lookupControllers.current[index] === controller) setLookingUp(previous => ({ ...previous, [index]: false }));
+    }
   };
 
   const reserve = async (event) => {
@@ -239,6 +323,7 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
       }
 
       rememberCode(result.reserva.codigo_reserva);
+      onReserved?.();
       setReservation({ ...trip, ...result.reserva });
       window.scrollTo(0, 0);
     } catch (err) {
@@ -281,6 +366,11 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
             />
           ) : (
             <form onSubmit={reserve} className="checkout-form">
+              <div className="notice">
+                <p>Puedes completar tus datos guardados por cédula con tu cuenta de cliente, o ingresarlos manualmente como visitante.</p>
+                {onAccount && !customer && <button type="button" className="button secondary" disabled={busy} onClick={onAccount}>Entrar a mi cuenta de cliente</button>}
+                {onHistory && <button type="button" className="button secondary" disabled={busy} onClick={onHistory}>Abrir Mis compras</button>}
+              </div>
               {/* Correo de contacto principal */}
               <fieldset className="passenger-fields" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #1e3a8a' }}>
                 <legend>
@@ -338,6 +428,10 @@ export default function Checkout({ trip, seats, onBack, onConsult }) {
                       placeholder="10 dígitos"
                     />
                   </label>
+                  <button type="button" className="button secondary" disabled={busy || lookingUp[i]} onClick={() => lookupPassenger(i)}>
+                    {lookingUp[i] ? 'Consultando datos…' : 'Completar por cédula'}
+                  </button>
+                  {lookupMessages[i] && <p role="status" className="small-copy">{lookupMessages[i]}</p>}
                   <label>
                     Tipo de tarifa / descuento legal
                     <select

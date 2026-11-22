@@ -11,6 +11,8 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
   const [telefono, setTelefono] = useState(coop?.telefono || '');
   const [direccion, setDireccion] = useState(coop?.direccion || '');
   const [guardadoMsg, setGuardadoMsg] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // Paleta de colores institucionales sugeridos
   const coloresSugeridos = [
@@ -34,8 +36,9 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
     }
   };
 
-  const handleGuardarCambios = (e) => {
+  const handleGuardarCambios = async (e) => {
     e.preventDefault();
+    if (saving) return;
     if (coop) {
       const datosActualizados = {
         ...coop,
@@ -44,13 +47,13 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
         telefono,
         direccion
       };
-      if (onGuardar) onGuardar(datosActualizados);
-      if (onActualizarCoop) onActualizarCoop(coop.id, datosActualizados);
-      setGuardadoMsg(true);
-      setTimeout(() => {
-        setGuardadoMsg(false);
-        if (onClose) onClose();
-      }, 1200);
+      setSaving(true); setSaveError(''); setGuardadoMsg(false);
+      try {
+        if (onGuardar) await onGuardar(datosActualizados);
+        if (onActualizarCoop) await onActualizarCoop(coop.id, datosActualizados);
+        setGuardadoMsg(true);
+      } catch (error) { setSaveError(error.message || 'No se pudo guardar la identidad visual.'); }
+      finally { setSaving(false); }
     }
   };
 
@@ -198,8 +201,9 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
               </div>
             )}
 
-            <button type="submit" style={styles.submitBtn}>
-              Actualizar Identidad Institucional
+            {saveError && <p role="alert" className="inline-error">{saveError}</p>}
+            <button type="submit" style={styles.submitBtn} disabled={saving}>
+              {saving ? 'Guardando…' : 'Actualizar Identidad Institucional'}
             </button>
           </form>
         </div>

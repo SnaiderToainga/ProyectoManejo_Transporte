@@ -5,13 +5,15 @@ import SeatSelection from './pages/Client/SeatSelection.jsx';
 import Checkout from './pages/Client/Checkout.jsx';
 import TicketLookup from './pages/Client/TicketLookup.jsx';
 import HistorialCompras from './pages/Client/HistorialCompras.jsx';
+import CustomerAccount from './pages/Client/CustomerAccount.jsx';
 import Login from './pages/Admin/Login.jsx';
 import GestionCooperativas from './pages/Admin/GestionCooperativas.jsx';
 import OfficeDashboard from './pages/Office/OfficeDashboard';
 import ChoferPanel from './pages/Driver/ChoferPanel.jsx';
 import { recalledCode } from './lib/reservation.js';
-import { isDemo } from './lib/api.js';
-import { canAccessOffice, canAccessDriver } from './lib/authGuard.js';
+import { api, isDemo } from './lib/api.js';
+import { canAccessOffice, canAccessDriver, canAccessAdmin } from './lib/authGuard.js';
+import { loadSelection, saveSelection, selectionKey } from './lib/purchaseFlow.js';
 
 const isHistoryHash = hash => hash === '#mis-compras' || hash.startsWith('#mis-compras?');
 const historyTokenFromHash = () => isHistoryHash(window.location.hash)
@@ -19,9 +21,14 @@ const historyTokenFromHash = () => isHistoryHash(window.location.hash)
   : '';
 
 export default function App() {
-  const [trip, setTrip] = useState(null);
-  const [category, setCategory] = useState('');
+  const [restored] = useState(() => { try { return loadSelection(sessionStorage, Date.now(), isDemo); } catch { return null; } });
+  const [trip, setTrip] = useState(restored?.trip || null);
+  const [category, setCategory] = useState(restored?.category || '');
+  const [selectedIds, setSelectedIds] = useState(restored?.ids || []);
+  const [checkoutDraft, setCheckoutDraft] = useState(null);
+  const [reserved, setReserved] = useState(false);
   const [seats, setSeats] = useState([]);
+  useEffect(() => { try { saveSelection(sessionStorage, reserved ? null : trip, category, selectedIds, Date.now(), isDemo); } catch {} }, [trip, category, selectedIds, reserved]);
   const getUrlCode = () => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -33,6 +40,29 @@ export default function App() {
 
   const [code, setCode] = useState(getUrlCode);
   const [historyToken, setHistoryToken] = useState(historyTokenFromHash);
+  const [customerToken, setCustomerToken] = useState(() => { try { return sessionStorage.getItem('transporte_cliente_token') || ''; } catch { return ''; } });
+  const [customer, setCustomer] = useState(null);
+  const [customerError, setCustomerError] = useState('');
+  const clearCustomer = () => {
+    setCustomerToken(''); setHistoryToken(''); setCustomer(null); setCustomerError(''); setCheckoutDraft(null);
+    try { sessionStorage.removeItem('transporte_cliente_token'); } catch {}
+  };
+  useEffect(() => {
+    if (!customerToken) return;
+    const controller = new AbortController();
+    api.customerProfile(customerToken, controller.signal).then(result => {
+      if (!controller.signal.aborted) {
+        if (!result.cliente?.id) throw new Error('No se pudo verificar la cuenta de cliente.');
+        setCustomer(result.cliente); setCustomerError('');
+      }
+    }).catch(error => {
+      if (!controller.signal.aborted) {
+        if ([401, 403].includes(error.status)) { setCustomerToken(''); setCustomer(null); try { sessionStorage.removeItem('transporte_cliente_token'); } catch {} }
+        setCustomerError('No pudimos verificar tu sesión de cliente. Puedes volver a ingresar o continuar como visitante.');
+      }
+    });
+    return () => controller.abort();
+  }, [customerToken]);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef(null);
 
@@ -48,12 +78,13 @@ export default function App() {
     const path = window.location.pathname;
     const hash = window.location.hash;
     if (isHistoryHash(hash)) return 'mis-compras';
+    if (hash === '#mi-cuenta') return 'mi-cuenta';
     let auth = null;
     try {
       auth = JSON.parse(localStorage.getItem('transporte_auth'));
     } catch {}
 
-    if (path === '/admin' || hash === '#admin') return 'admin';
+    if (path === '/admin' || hash === '#admin') return canAccessAdmin(auth) ? 'admin' : 'login';
     if (path === '/login' || hash === '#login') return 'login';
     if (path === '/chofer' || hash === '#chofer') {
       if (!canAccessDriver(auth)) {
@@ -96,11 +127,16 @@ export default function App() {
     window.location.hash = 'mis-compras';
     window.scrollTo(0, 0);
   };
+  const goCustomer = () => { setPage('mi-cuenta'); window.location.hash = 'mi-cuenta'; window.scrollTo(0, 0); };
+  const resumePurchase = () => { setPage('search'); window.location.hash = 'buscar'; window.scrollTo(0, 0); };
 
   const goSearch = () => {
     setMenuOpen(false);
     setTrip(null);
     setSeats([]);
+    setSelectedIds([]);
+    setCheckoutDraft(null);
+    setReserved(false);
     setCode('');
     setPage('search');
     window.location.hash = 'buscar';
@@ -156,8 +192,14 @@ export default function App() {
           window.history.replaceState(null, '', '#mis-compras');
         }
         setPage('mis-compras');
+      } else if (hash === '#mi-cuenta') {
+        setPage('mi-cuenta');
       } else if (hash === '#admin') {
-        setPage('admin');
+        let stored = null;
+        try { stored = JSON.parse(localStorage.getItem('transporte_auth')); } catch {}
+        if (!canAccessAdmin(stored)) {
+          setAuthError('Acceso restringido a administración de cooperativas.'); setPage('login'); window.location.hash = 'login';
+        } else setPage('admin');
       } else if (hash === '#login') {
         setPage('login');
       } else if (hash === '#chofer') {
@@ -198,8 +240,6 @@ export default function App() {
         setPage('ticket');
       } else {
         setPage('search');
-        setTrip(null);
-        setSeats([]);
       }
     };
     window.addEventListener('hashchange', change);
@@ -245,6 +285,7 @@ export default function App() {
           </button>
 
           <nav id="main-navigation" className={`site-nav flex-wrap ${menuOpen ? 'is-open' : ''}`} aria-label="Principal" onClick={() => setMenuOpen(false)}>
+            {!['admin', 'oficina', 'chofer'].includes(page) ? <>
             <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
               Buscar viaje
             </button>
@@ -254,6 +295,8 @@ export default function App() {
             <button className={`nav-link ${page === 'mis-compras' ? 'active' : ''}`} onClick={goHistory}>
               Mis compras
             </button>
+            <button className={`nav-link ${page === 'mi-cuenta' ? 'active' : ''}`} onClick={goCustomer}>Mi cuenta</button>
+            </> : <button className="nav-link" onClick={goSearch}>Portal de clientes</button>}
             {usuario && (usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
               <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
                 Taquilla / Oficina
@@ -357,17 +400,33 @@ export default function App() {
               }}
             />
           )
+        ) : page === 'mi-cuenta' ? (
+          <>
+            {customerError && <p role="alert" className="inline-error">{customerError}</p>}
+            <CustomerAccount customer={customer} onSession={result => {
+              setCustomerToken(result.token); setCustomer(result.cliente); setCustomerError('');
+              try { sessionStorage.setItem('transporte_cliente_token', result.token); } catch {}
+            }} onLogout={clearCustomer} onHistory={goHistory} onContinue={trip ? resumePurchase : goSearch} />
+          </>
         ) : page === 'mis-compras' ? (
-          <HistorialCompras token={historyToken} onClearAccess={() => setHistoryToken('')} onVerBoleto={goTicket} />
+          <>
+            {trip && <button type="button" className="back-link" onClick={resumePurchase}>Volver a mi compra</button>}
+            <HistorialCompras token={customerToken || historyToken} customer={customer}
+              onAccount={goCustomer} onClearAccess={() => { clearCustomer(); setHistoryToken(''); }} onVerBoleto={goTicket} />
+          </>
         ) : page === 'ticket' ? (
           <TicketLookup key={code} initialCode={code} onBack={goSearch} />
         ) : trip && seats.length ? (
-          <Checkout trip={trip} seats={seats} onBack={() => setSeats([])} onConsult={goTicket} />
+          <Checkout key={selectionKey(trip)} trip={trip} seats={seats} draft={checkoutDraft} onDraftChange={setCheckoutDraft}
+            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
+            onReserved={() => { setReserved(true); setSelectedIds([]); setCheckoutDraft(null); }} />
         ) : trip ? (
           <SeatSelection
             trip={trip}
             initialCategory={category}
-            onBack={() => setTrip(null)}
+            initialSelectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            onBack={goSearch}
             onContinue={(picked) => {
               setSeats(picked);
               window.scrollTo(0, 0);
@@ -387,6 +446,9 @@ export default function App() {
               onChoose={(next, filter) => {
                 setTrip(next);
                 setCategory(filter);
+                setSelectedIds([]);
+                setCheckoutDraft(null);
+                setReserved(false);
                 window.scrollTo(0, 0);
               }}
             />

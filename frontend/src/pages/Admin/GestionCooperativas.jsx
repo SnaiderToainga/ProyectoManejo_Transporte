@@ -22,15 +22,12 @@ import {
   Briefcase
 } from 'lucide-react';
 import ModalNuevaCooperativa from './ModalNuevaCooperativa.jsx';
+import BusDetails from '../../components/BusDetails.jsx';
+import BusForm from './BusForm.jsx';
+import BusStructures from './BusStructures.jsx';
 import PersonalizacionBranding from './PersonalizacionBranding.jsx';
 import HojaRuta from '../Office/HojaRuta.jsx';
 import { planningRequest } from '../../lib/planningApi.js';
-import {
-  mockCooperativas,
-  mockMetricasAdmin,
-  mockBuses,
-  mockFrecuencias
-} from './mockDataAdmin.js';
 
 const isLocalEnv = typeof window !== 'undefined' && (
   window.location.hostname === 'localhost' || 
@@ -60,28 +57,22 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   const coopAsignadaNombre = authUser?.cooperativa_nombre || 'Sin cooperativa asignada';
 
   const [tabActiva, setTabActiva] = useState(isGerente ? 'buses' : 'cooperativas');
-  const [cooperativas, setCooperativas] = useState(mockCooperativas);
-  const [buses, setBuses] = useState(mockBuses);
-  const [frecuencias, setFrecuencias] = useState(mockFrecuencias);
-  const [metricas, setMetricas] = useState(mockMetricasAdmin);
+  const [cooperativas, setCooperativas] = useState([]);
+  const [buses, setBuses] = useState([]);
+  const [frecuencias, setFrecuencias] = useState([]);
+  const [metricas, setMetricas] = useState({ total_cooperativas: 0, cooperativas_activas: 0, total_buses: 0, buses_40_asientos: 0, buses_41_asientos: 0, total_frecuencias: 0 });
 
   // Modales
   const [modalNuevaCoopAbierto, setModalNuevaCoopAbierto] = useState(false);
+  const [coopEditando, setCoopEditando] = useState(null);
+  const [busDetalle, setBusDetalle] = useState(null);
+  const [busEditando, setBusEditando] = useState(null);
+  const [modalBusAbierto, setModalBusAbierto] = useState(false);
   const [modalBrandingAbierto, setModalBrandingAbierto] = useState(false);
   const [coopSeleccionadaBranding, setCoopSeleccionadaBranding] = useState(null);
 
   // Notificaciones de éxito
   const [alerta, setAlerta] = useState(null);
-
-  // Formulario nuevo Bus
-  const [formBus, setFormBus] = useState({
-    cooperativa_id: coopId || 1,
-    numero_disco: '',
-    placa: '',
-    capacidad: 40,
-    tiene_bano_posterior: true,
-    estado: 'OPERATIVO'
-  });
 
   // Formulario nueva Frecuencia ANT y modo edición
   const [frecuenciaEditandoId, setFrecuenciaEditandoId] = useState(null);
@@ -122,30 +113,22 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     return () => abort.abort();
   }, [modalUsuarioAbierto, formUsuario.rol, formUsuario.cooperativa_id, authUser?.token, isGerente, coopId]);
 
-  // Cargar datos reales de la API (con fallback a mock)
+  // No presentar datos ficticios como registros persistidos cuando falla el catálogo.
   const cargarDatos = async () => {
     try {
-      const [resCoop, resBuses, resFrec] = await Promise.all([
-        fetch(`${API_URL}/admin/cooperativas`),
-        fetch(`${API_URL}/admin/buses`),
-        fetch(`${API_URL}/admin/frecuencias`)
-      ]);
-
-      if (resCoop.ok) {
-        const dataCoop = await resCoop.json();
-        if (dataCoop.length > 0) setCooperativas(dataCoop);
-      }
-      if (resBuses.ok) {
-        const dataBuses = await resBuses.json();
-        if (dataBuses.length > 0) setBuses(dataBuses);
-      }
-      if (resFrec.ok) {
-        const dataFrec = await resFrec.json();
-        if (dataFrec.length > 0) setFrecuencias(dataFrec);
-      }
+      const [dataCoop, dataBuses, dataFrec] = await Promise.all(['cooperativas', 'buses', 'frecuencias'].map(async resource => {
+        const response = await fetch(`${API_URL}/admin/${resource}`, {
+          headers: { ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
+            'x-user-role': authUser?.rol || '', 'x-user-cooperativa-id': String(coopId || '') }
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(data)) throw new Error(data?.error || 'No se pudo cargar el catálogo administrativo.');
+        return data;
+      }));
+      setCooperativas(dataCoop); setBuses(dataBuses); setFrecuencias(dataFrec);
       mostrarAlerta('Datos sincronizados con la nube de transporte.');
     } catch (err) {
-      console.warn('Usando catálogo local:', err);
+      setAlerta(err.message || 'No se pudo cargar el catálogo administrativo. Intenta sincronizar nuevamente.');
     }
   };
 
@@ -156,7 +139,6 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   // Actualizar cooperativa_id por defecto si es gerente
   useEffect(() => {
     if (isGerente && coopId) {
-      setFormBus(prev => ({ ...prev, cooperativa_id: coopId }));
       setFormFrecuencia(prev => ({ ...prev, cooperativa_id: coopId }));
     }
   }, [isGerente, coopId]);
@@ -191,26 +173,25 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   }, [cooperativas, buses, frecuencias, isGerente]);
 
   // Manejar creación de nueva cooperativa
-  const handleGuardarNuevaCoop = async (nuevaCoop, credencialesGerente) => {
-    try {
-      const resp = await fetch(`${API_URL}/admin/cooperativas`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...nuevaCoop, gerente: credencialesGerente })
-      });
-      const data = await resp.json();
-      if (resp.ok && data.cooperativa) {
-        setCooperativas([data.cooperativa, ...cooperativas]);
-        mostrarAlerta(`Cooperativa "${data.cooperativa.nombre}" registrada exitosamente en base de datos.`);
-      } else {
-        setCooperativas([nuevaCoop, ...cooperativas]);
-        mostrarAlerta(`Cooperativa "${nuevaCoop.nombre}" registrada localmente.`);
-      }
-    } catch {
-      setCooperativas([nuevaCoop, ...cooperativas]);
-      mostrarAlerta(`Cooperativa "${nuevaCoop.nombre}" guardada localmente.`);
+  const handleGuardarNuevaCoop = async (payload) => {
+    const editing = Boolean(coopEditando);
+    if (!editing && !isSuperAdmin) throw new Error('Solo SuperAdmin puede registrar cooperativas.');
+    if (editing && !isSuperAdmin && (!isGerente || Number(coopEditando.id) !== Number(coopId))) {
+      throw new Error('Solo puedes editar tu cooperativa asignada.');
     }
-    setModalNuevaCoopAbierto(false);
+    const resp = await fetch(`${API_URL}/admin/cooperativas${editing ? `/${coopEditando.id}` : ''}`, {
+      method: editing ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json',
+        ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
+        'x-user-role': authUser?.rol || '', 'x-user-cooperativa-id': String(coopId || '') },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data?.cooperativa?.id) throw new Error(data?.error || 'No se pudo guardar la cooperativa. Intenta nuevamente.');
+    setCooperativas(previous => editing
+      ? previous.map(item => Number(item.id) === Number(data.cooperativa.id) ? data.cooperativa : item)
+      : [data.cooperativa, ...previous]);
+    mostrarAlerta(`Cooperativa "${data.cooperativa.nombre}" ${editing ? 'actualizada' : 'registrada'} correctamente.`);
   };
 
   // Manejar eliminación de cooperativa
@@ -234,84 +215,36 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     }
   };
 
-  // Manejar actualización de branding
+  // Guardar únicamente respuestas confirmadas por el backend.
   const handleGuardarBranding = async (coopActualizada) => {
-    let coopGuardada = coopActualizada;
-    try {
-      const resp = await fetch(`${API_URL}/admin/cooperativas/${coopActualizada.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': authUser?.rol || 'SUPERADMIN',
-          'x-user-cooperativa-id': String(coopId || coopActualizada.id || '')
-        },
-        body: JSON.stringify(coopActualizada)
-      });
-      const data = await resp.json().catch(() => null);
-      if (resp.ok && data?.cooperativa) {
-        coopGuardada = { ...coopActualizada, ...data.cooperativa };
-      }
-    } catch (e) {
-      console.warn('Branding actualizado localmente:', e);
-    }
-    setCooperativas(prev => prev.map(c => Number(c.id) === Number(coopGuardada.id) ? coopGuardada : c));
+    const resp = await fetch(`${API_URL}/admin/cooperativas/${coopActualizada.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json",
+        ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
+        "x-user-role": authUser?.rol || "", "x-user-cooperativa-id": String(coopId || "") },
+      body: JSON.stringify(coopActualizada)
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data?.cooperativa?.id) throw new Error(data?.error || "No se pudo guardar la identidad visual.");
+    setCooperativas(previous => previous.map(coop => Number(coop.id) === Number(data.cooperativa.id) ? data.cooperativa : coop));
     setModalBrandingAbierto(false);
-    mostrarAlerta(`Identidad visual y branding de "${coopGuardada.nombre}" guardados permanentemente en la base de datos.`);
+    mostrarAlerta("Identidad visual actualizada correctamente.");
   };
 
-  // Guardar Bus (Disparador de Loop de 40/41 Asientos)
-  const handleGuardarBus = async (e) => {
-    e.preventDefault();
-    if (!formBus.numero_disco || !formBus.placa) return;
-
-    if (isGerente && !coopId) return mostrarAlerta('Vuelve a iniciar sesión con una cooperativa asignada.');
-    const coopTargetId = isGerente ? Number(coopId) : Number(formBus.cooperativa_id);
-
-    try {
-      const resp = await fetch(`${API_URL}/admin/buses`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formBus, cooperativa_id: coopTargetId })
-      });
-      const data = await resp.json();
-
-      if (resp.ok && data.bus) {
-        const coopObj = cooperativas.find(c => c.id === coopTargetId);
-        const nuevoBus = {
-          ...data.bus,
-          cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
-          color_distintivo: coopObj ? coopObj.color_distintivo : '#1E40AF'
-        };
-        setBuses([...buses, nuevoBus]);
-        mostrarAlerta(data.mensaje || `Bus #${formBus.numero_disco} registrado con sus ${formBus.capacidad} asientos en base de datos.`);
-      } else {
-        throw new Error(data.error || 'Error al guardar');
-      }
-    } catch {
-      const coopObj = cooperativas.find(c => c.id === coopTargetId);
-      const busSimulado = {
-        id: Date.now(),
-        cooperativa_id: coopTargetId,
-        cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
-        color_distintivo: coopObj ? coopObj.color_distintivo : '#1E40AF',
-        numero_disco: Number(formBus.numero_disco),
-        placa: formBus.placa.toUpperCase(),
-        capacidad: Number(formBus.capacidad),
-        tiene_bano_posterior: formBus.tiene_bano_posterior,
-        estado: formBus.estado
-      };
-      setBuses([...buses, busSimulado]);
-      mostrarAlerta(`Bus #${busSimulado.numero_disco} guardado (${busSimulado.capacidad} asientos generados).`);
+  const handleGuardarBus = async (payload) => {
+    if (!isGerente && !isSuperAdmin) throw new Error("No tienes permiso para guardar unidades.");
+    if (isGerente && (!coopId || (busEditando && Number(busEditando.cooperativa_id) !== Number(coopId)))) {
+      throw new Error("Solo puedes gestionar tu cooperativa asignada.");
     }
-
-    setFormBus({
-      cooperativa_id: coopTargetId,
-      numero_disco: '',
-      placa: '',
-      capacidad: 40,
-      tiene_bano_posterior: true,
-      estado: 'OPERATIVO'
+    const resp = await fetch(`${API_URL}/admin/buses${busEditando ? `/${busEditando.id}` : ""}`, {
+      method: busEditando ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json", ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
+        "x-user-role": authUser?.rol || "", "x-user-cooperativa-id": String(coopId || "") },
+      body: JSON.stringify({ ...payload, cooperativa_id: isGerente ? Number(coopId) : payload.cooperativa_id })
     });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data?.bus?.id) throw new Error(data?.error || "No se pudo guardar la unidad. Tus datos se conservan para reintentar.");
+    setBuses(previous => busEditando ? previous.map(bus => Number(bus.id) === Number(data.bus.id) ? data.bus : bus) : [...previous, data.bus]);
+    mostrarAlerta("Unidad guardada correctamente.");
   };
 
   // Cambiar estado de Bus (OPERATIVO <-> MANTENIMIENTO)
@@ -819,7 +752,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           style={{ ...styles.tabBtn, ...(tabActiva === 'buses' ? styles.tabBtnActive : {}) }}
         >
           <Bus size={18} />
-          <span>Gestión de Buses (40/41 Asientos)</span>
+          <span>Gestión de Buses</span>
         </button>
         <button
           onClick={() => setTabActiva('frecuencias')}
@@ -832,9 +765,13 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           style={{ ...styles.tabBtn, ...(tabActiva === 'planificacion' ? styles.tabBtnActive : {}) }}>
           <Clock size={18} /><span>Grupos y hojas de ruta</span>
         </button>}
+        <button onClick={() => setTabActiva('estructuras')} style={{ ...styles.tabBtn, ...(tabActiva === 'estructuras' ? styles.tabBtnActive : {}) }}>
+          <Bus size={18} /><span>Plantillas y estructuras</span>
+        </button>
       </nav>
 
       {tabActiva === 'planificacion' && <HojaRuta usuario={authUser} />}
+      {tabActiva === 'estructuras' && <BusStructures buses={busesVisibles} user={authUser} />}
 
       {/* ==================================================== */}
       {/* PESTAÑA 1: COOPERATIVAS & BRANDING */}
@@ -853,7 +790,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
               </p>
             </div>
             {!isGerente && (
-              <button onClick={() => setModalNuevaCoopAbierto(true)} style={styles.btnPrimary}>
+              <button onClick={() => { setCoopEditando(null); setModalNuevaCoopAbierto(true); }} style={styles.btnPrimary}>
                 <Plus size={18} />
                 <span>Nueva Cooperativa</span>
               </button>
@@ -940,7 +877,10 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   </div>
                 </div>
 
-                <div style={{ ...styles.coopCardFooter, display: 'flex', gap: '0.5rem' }}>
+                <div style={{ ...styles.coopCardFooter, display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <button className="button secondary" onClick={() => { setCoopEditando(coop); setModalNuevaCoopAbierto(true); }}>
+                    <Edit2 size={16} /> Editar perfil
+                  </button>
                   <button
                     onClick={() => {
                       setCoopSeleccionadaBranding(coop);
@@ -989,94 +929,9 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           <div style={styles.splitLayout}>
             {/* Formulario de registro de bus */}
             <div style={styles.panelForm}>
-              <h2 style={styles.panelTitle}>Registrar Nueva Unidad</h2>
-              <p style={styles.panelSubtitle}>El sistema generará automáticamente sus 40 o 41 asientos con su configuración física.</p>
-
-              <form onSubmit={handleGuardarBus} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {!isGerente && (
-                  <div>
-                    <label style={styles.formLabel}>Cooperativa Perteneciente</label>
-                    <select
-                      value={formBus.cooperativa_id}
-                      onChange={(e) => setFormBus({ ...formBus, cooperativa_id: e.target.value })}
-                      style={styles.formInput}
-                    >
-                      {cooperativas.map(c => (
-                        <option key={c.id} value={c.id}>{c.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div>
-                    <label style={styles.formLabel}>Número de Disco</label>
-                    <input
-                      type="number"
-                      required
-                      placeholder="Ej. 15"
-                      value={formBus.numero_disco}
-                      onChange={(e) => setFormBus({ ...formBus, numero_disco: e.target.value })}
-                      style={styles.formInput}
-                    />
-                  </div>
-                  <div>
-                    <label style={styles.formLabel}>Placa</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="TAA-1515"
-                      value={formBus.placa}
-                      onChange={(e) => setFormBus({ ...formBus, placa: e.target.value })}
-                      style={styles.formInput}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={styles.formLabel}>Configuración Física de Asientos (Requisito)</label>
-                  <div style={styles.capacityOptions}>
-                    <label style={{
-                      ...styles.capacityCard,
-                      border: formBus.capacidad === 40 ? '2px solid #1E40AF' : '1px solid #CBD5E1',
-                      background: formBus.capacidad === 40 ? '#EFF6FF' : '#FFFFFF'
-                    }}>
-                      <input
-                        type="radio"
-                        name="capacidad"
-                        checked={formBus.capacidad === 40}
-                        onChange={() => setFormBus({ ...formBus, capacidad: 40, tiene_bano_posterior: true })}
-                      />
-                      <div>
-                        <strong>40 Asientos</strong>
-                        <div style={{ fontSize: '0.75rem', color: '#64748B' }}>Con Baño posterior al fondo</div>
-                      </div>
-                    </label>
-
-                    <label style={{
-                      ...styles.capacityCard,
-                      border: formBus.capacidad === 41 ? '2px solid #1E40AF' : '1px solid #CBD5E1',
-                      background: formBus.capacidad === 41 ? '#EFF6FF' : '#FFFFFF'
-                    }}>
-                      <input
-                        type="radio"
-                        name="capacidad"
-                        checked={formBus.capacidad === 41}
-                        onChange={() => setFormBus({ ...formBus, capacidad: 41, tiene_bano_posterior: false })}
-                      />
-                      <div>
-                        <strong>41 Asientos</strong>
-                        <div style={{ fontSize: '0.75rem', color: '#64748B' }}>Asientos continuos sin baño</div>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                <button type="submit" style={styles.btnPrimary}>
-                  <Bus size={18} />
-                  <span>Guardar Bus y Generar Asientos</span>
-                </button>
-              </form>
+              <h2 style={styles.panelTitle}>Administrar unidades</h2>
+              <p style={styles.panelSubtitle}>Registra los datos técnicos, las fotografías y el propietario de cada unidad.</p>
+              <button type="button" className="button primary" onClick={() => { setBusEditando(null); setModalBusAbierto(true); }}>Registrar unidad</button>
             </div>
 
             {/* Listado de buses */}
@@ -1122,6 +977,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                         </td>
                         <td style={{ ...styles.td, textAlign: 'center' }}>
                           <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                            <button type="button" className="button secondary" onClick={() => setBusDetalle(bus)}>Ver más</button>
+                            <button type="button" className="button secondary" onClick={() => { setBusEditando(bus); setModalBusAbierto(true); }}>Editar unidad</button>
                             <button
                               onClick={() => handleToggleEstadoBus(bus)}
                               title={bus.estado === 'OPERATIVO' ? 'Pasar a Mantenimiento' : 'Pasar a Operativo'}
@@ -1597,12 +1454,16 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       {modalNuevaCoopAbierto && (
         <ModalNuevaCooperativa
           isOpen={true}
-          onClose={() => setModalNuevaCoopAbierto(false)}
+          onClose={() => { setModalNuevaCoopAbierto(false); setCoopEditando(null); }}
           onGuardar={handleGuardarNuevaCoop}
+          cooperativa={coopEditando}
         />
       )}
 
       {/* Modal de Personalización Branding */}
+      {busDetalle && <BusDetails bus={busDetalle} onClose={() => setBusDetalle(null)} />}
+      {modalBusAbierto && <BusForm bus={busEditando} cooperativas={cooperativasVisibles} cooperativeId={coopId}
+        isManager={isGerente} onSave={handleGuardarBus} onClose={() => { setModalBusAbierto(false); setBusEditando(null); }} />}
       {modalBrandingAbierto && coopSeleccionadaBranding && (
         <PersonalizacionBranding
           cooperativa={coopSeleccionadaBranding}

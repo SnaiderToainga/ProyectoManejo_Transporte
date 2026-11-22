@@ -8,7 +8,7 @@ const labels = {
   rejected: 'Rechazado', cancelled: 'Cancelado', expired: 'Vencido', unknown: 'Estado no disponible',
 };
 
-export default function HistorialCompras({ token, onClearAccess, onVerBoleto }) {
+export default function HistorialCompras({ token, onClearAccess, onVerBoleto, customer, onAccount }) {
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -51,6 +51,8 @@ export default function HistorialCompras({ token, onClearAccess, onVerBoleto }) 
   return (
     <section className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-3xl font-bold">Mis compras y boletos</h1>
+      {customer && <p>Compras de {customer.nombre} · {customer.email}</p>}
+      {!customer && onAccount && <button type="button" className="button secondary" onClick={onAccount}>Entrar o registrarme como cliente</button>}
       {!token ? (
         <>
           <p>Ingresa el correo que usaste al reservar. Te enviaremos un enlace para consultar tus compras.</p>

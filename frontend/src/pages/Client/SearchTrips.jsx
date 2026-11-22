@@ -1,5 +1,6 @@
 import RouteMap from '../../components/RouteMap.jsx';
 import CantonAutocomplete from '../../components/CantonAutocomplete.jsx';
+import BusDetails from '../../components/BusDetails.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, BusFront, CalendarDays, Search, SlidersHorizontal, Users } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
@@ -9,6 +10,7 @@ import { cantonOptions, countAvailableSeats, MAX_PASSENGERS, passengerCount, sea
 const initialFilters = () => ({ fecha: today(), origen: '', destino: '', cooperativa: '', desde: '', hasta: '', categoria: '', pasajeros: '1', marca_chasis: '', carroceria: '', tipo_servicio: '' });
 
 export default function SearchTrips({ onChoose }) {
+  const [busDetalle, setBusDetalle] = useState(null);
   const [filters, setFilters] = useState(initialFilters);
   const [query, setQuery] = useState(initialFilters);
   const [trips, setTrips] = useState([]);
@@ -162,6 +164,7 @@ export default function SearchTrips({ onChoose }) {
                           🚌 UNIDAD #{trip.numero_disco}
                         </span>
                         <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos</span>
+                        <button type="button" className="inline-link" aria-label={`Ver más del bus ${trip.numero_disco}`} onClick={() => setBusDetalle(trip)}>Ver más</button>
                       </div>
                     </div>
                   </div>
@@ -247,5 +250,6 @@ export default function SearchTrips({ onChoose }) {
             })}</div></>}
     </section>
     <div className="how-it-works">{[['01', 'Encuentra tu viaje', 'Compara rutas y horarios.'], ['02', 'Elige tu lugar', 'Un asiento a tu medida.'], ['03', 'Lleva tu boleto', 'Consulta y descarga tu PDF.']].map(([number, title, copy]) => <div key={number}><span>{number}</span><div><h3>{title}</h3><p>{copy}</p></div></div>)}</div>
+    {busDetalle && <BusDetails bus={busDetalle} onClose={() => setBusDetalle(null)} />}
   </>;
 }

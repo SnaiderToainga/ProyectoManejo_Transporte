@@ -30,9 +30,20 @@ async function call(name, args, live) {
 }
 
 export const api = {
+  customerSession: (register, payload) => request(`/clientes/${register ? 'registro' : 'sesion'}`, { method: 'POST', body: JSON.stringify(payload) }),
+  customerProfile: (token, signal) => request('/clientes/me', { signal, headers: { Authorization: `Bearer ${token}` } }),
   ticketUrl: (code, id) => `${baseUrl}/reservas/${encodeURIComponent(code)}/boletos/${encodeURIComponent(id)}/pdf`,
   requestHistoryLink: email => request('/mis-compras/acceso', { method: 'POST', body: JSON.stringify({ email }) }),
   purchaseHistory: (token, signal) => request('/mis-compras', { signal, headers: { Authorization: `Bearer ${token}` } }),
+  passenger: (cedula, token, signal) => {
+    if (!token) return Promise.reject(new ApiError('Abre tu acceso a Mis compras para completar tus datos guardados.', 401));
+    return request(`/clientes/por-cedula/${encodeURIComponent(cedula)}`, { signal, headers: { Authorization: `Bearer ${token}` } });
+  },
+  cardPayment: code => {
+    if (isDemo) return Promise.reject(new ApiError('El pago con tarjeta no está disponible en la demostración.'));
+    return request(`/reservas/${encodeURIComponent(code)}/pago-tarjeta`, { method: 'POST',
+      headers: { 'Idempotency-Key': `cr01-${code}` }, body: JSON.stringify({ metodo_pago: 'TARJETA' }) });
+  },
   ticketQr: (code, id) => `${baseUrl}/reservas/${encodeURIComponent(code)}/boletos/${encodeURIComponent(id)}/qr`,
   trips: (date, signal) => call('trips', [date], () => request(`/viajes?fecha=${encodeURIComponent(date)}`, { signal })),
   cooperatives: (signal) => call('cooperatives', [], () => request('/cooperativas', { signal })),
@@ -40,8 +51,8 @@ export const api = {
   seats: (id, signal) => call('seats', [id], () => request(`/viajes/${encodeURIComponent(id)}/asientos`, { signal })),
   reserve: (payload) => call('reserve', [payload], () => request('/reservas', { method: 'POST', body: JSON.stringify(payload) })),
   reservation: (code, signal) => call('reservation', [code], () => request(`/reservas/${encodeURIComponent(code)}`, { signal })),
-  receipt: (code, file) => call('receipt', [code, file], () => {
-    const body = new FormData(); body.append('comprobante', file);
+  receipt: (code, file, method = 'TRANSFERENCIA') => call('receipt', [code, file], () => {
+    const body = new FormData(); body.append('comprobante', file); body.append('metodo_pago', method);
     return request(`/reservas/${encodeURIComponent(code)}/comprobante`, { method: 'POST', body });
   }),
   ticket: async (code, ticketId) => {
