@@ -1,6 +1,6 @@
 // frontend/src/pages/Client/Checkout.jsx
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, CheckCircle2, FileUp, LockKeyhole, Mail } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, ExternalLink, FileUp, Landmark, LockKeyhole, Mail, ReceiptText, ShieldCheck, Sparkles } from 'lucide-react';
 import ReservationTimer from '../../components/ReservationTimer.jsx';
 import { api, isDemo } from '../../lib/api.js';
 import { money, shortTime, travelDate } from '../../lib/format.js';
@@ -18,9 +18,22 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
   const [bank, setBank] = useState(null);
   const [method, setMethod] = useState('TRANSFERENCIA');
   const [paymentUrl, setPaymentUrl] = useState('');
+  const [copied, setCopied] = useState('');
   const sending = useRef(false);
+  const copyTimer = useRef(null);
   const inputRef = useRef(null);
   const status = reservationStatus(reservation, now);
+
+  useEffect(() => () => { clearTimeout(copyTimer.current); }, []);
+
+  const copyText = async (text, kind) => {
+    try {
+      await navigator.clipboard?.writeText(String(text));
+      setCopied(kind);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(''), 2000);
+    } catch {}
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -104,75 +117,218 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
     unknown: ['Estado por confirmar', 'Consulta nuevamente o comunícate con la cooperativa.'],
   };
 
+  const paymentOptions = [
+    {
+      value: 'TRANSFERENCIA',
+      label: 'Transferencia bancaria',
+      hint: 'Transferencia directa desde tu banca móvil o web · Validación en taquilla',
+      Icon: Landmark,
+    },
+    {
+      value: 'DEPOSITO',
+      label: 'Depósito bancario',
+      hint: 'Depósito en ventanilla o corresponsal no bancario · Validación en taquilla',
+      Icon: ReceiptText,
+    },
+    {
+      value: 'TARJETA',
+      label: 'Tarjeta de débito o crédito',
+      hint: 'Pasarela alojada Stripe Sandbox (USD) · Confirmación automática',
+      Icon: CreditCard,
+    },
+  ];
+
+  const selectMethod = (value) => {
+    if (busy) return;
+    setMethod(value);
+    setError('');
+  };
+
   return (
     <div className="payment-panel">
-      <div className="reservation-code">
-        <span>Tu código de reserva</span>
-        <strong>{reservation.codigo_reserva}</strong>
-        <p>Guárdalo para consultar tu compra y boletos.</p>
+      <div className="cr01-pay-top">
+        <div className="reservation-code">
+          <div className="cr01-code-row">
+            <span>Tu código de reserva</span>
+            <button
+              type="button"
+              className="cr01-copy-btn"
+              aria-label="Copiar código de reserva"
+              onClick={() => copyText(reservation.codigo_reserva, 'code')}
+            >
+              {copied === 'code' ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar</>}
+            </button>
+          </div>
+          <strong>{reservation.codigo_reserva}</strong>
+          <p>Guárdalo para consultar tu compra y boletos.</p>
+        </div>
+        {status === 'pending' && <ReservationTimer expiresAt={reservation.expira_en} onExpire={() => setNow(Date.now())} />}
       </div>
       {status === 'pending' ? (
-        <>
-          <ReservationTimer expiresAt={reservation.expira_en} onExpire={() => setNow(Date.now())} />
-          <fieldset className="cr01-payment-methods" disabled={busy}>
-            <legend>Método de pago</legend>
-            {[['TRANSFERENCIA', 'Transferencia bancaria'], ['DEPOSITO', 'Depósito bancario'], ['TARJETA', 'Tarjeta de débito o crédito']].map(([value, label]) =>
-              <label key={value}><input type="radio" name="metodo-pago" checked={method === value} onChange={() => { setMethod(value); setError(''); }} />{label}</label>)}
-          </fieldset>
-          {method === 'TARJETA' ? <div className="cr01-card-payment">
-            <h2>Pago con tarjeta</h2>
-            <p>Importe de la reserva: <strong>{money(reservation.total)}</strong>. Ingresa los datos de tu tarjeta únicamente en la pasarela de pago.</p>
-            {paymentUrl ? <a className="button primary" href={paymentUrl} target="_blank" rel="noopener noreferrer">Continuar en la pasarela</a>
-              : <button type="button" className="button primary" disabled={busy || isDemo} onClick={payByCard}>{busy ? 'Conectando…' : 'Pagar con tarjeta'}</button>}
-            <p className="small-copy">El boleto estará disponible cuando la cooperativa confirme el pago. Puedes consultar el estado con tu código de reserva.</p>
-            {isDemo && <p role="status">El pago con tarjeta no está disponible en la demostración.</p>}
-            {error && <p role="alert" className="inline-error">{error}</p>}
-          </div> : <>
-          <h2>Envía tu comprobante</h2>
-          <p className="small-copy">
-            Transferencia o depósito por <strong>{money(reservation.total)}</strong> a la cooperativa de tu viaje.
-          </p>
-          {isDemo ? (
-            <div className="notice">
-              <p>Esta es una demostración. Usa un archivo de prueba y no realices una transferencia.</p>
-            </div>
-          ) : bank?.banco && bank?.cuenta_bancaria ? (
-            <dl className="bank-details">
-              <div><dt>Beneficiario</dt><dd>{bank.nombre}</dd></div>
-              <div><dt>Banco</dt><dd>{bank.banco}</dd></div>
-              <div><dt>Cuenta</dt><dd>{bank.cuenta_bancaria}</dd></div>
-            </dl>
-          ) : (
-            <p className="inline-error">
-              No tenemos los datos bancarios confirmados. Consúltalos directamente con la cooperativa antes de transferir.
-            </p>
-          )}
-          <form onSubmit={upload} className="receipt-form">
-            <label className="file-field">
-              <FileUp size={28} />
-              <span>Comprobante de pago</span>
-              <span className="small-copy">PNG, JPG o PDF · máximo 5 MB</span>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,application/pdf,.png,.jpg,.jpeg,.pdf"
-                disabled={busy}
-                onChange={event => {
-                  const next = event.target.files?.[0];
-                  setFile(next || null);
-                  setError(next ? receiptError(next) : '');
-                }}
-              />
-            </label>
-            {file && <p className="file-name">{file.name}</p>}
-            {error && <p className="inline-error" role="alert">{error}</p>}
-            <button className="button primary full-width" disabled={busy || !file || Boolean(receiptError(file))}>
-              {busy ? 'Enviando comprobante…' : 'Enviar comprobante'}
-              <ArrowRight size={16} />
-            </button>
-          </form>
-          </>}
-        </>
+        <fieldset className="cr01-payment-methods" disabled={busy}>
+          <legend className="cr01-pay-legend">Método de pago</legend>
+          <div className="cr01-pay-accordion">
+            {paymentOptions.map(({ value, label, hint, Icon }) => {
+              const active = method === value;
+              const radioId = `metodo-${value.toLowerCase()}`;
+              return (
+                <div key={value} className={`cr01-pay-item ${active ? 'is-selected' : ''}`}>
+                  <div
+                    className="cr01-pay-row"
+                    onClick={(event) => {
+                      if (event.target.tagName !== 'INPUT' && event.target.tagName !== 'LABEL') {
+                        selectMethod(value);
+                      }
+                    }}
+                  >
+                    <input
+                      id={radioId}
+                      type="radio"
+                      name="metodo-pago"
+                      className="cr01-pay-radio"
+                      checked={active}
+                      onChange={() => selectMethod(value)}
+                    />
+                    <span className="cr01-pay-icon-tile" aria-hidden="true">
+                      <Icon size={18} />
+                    </span>
+                    <div className="cr01-pay-meta">
+                      <label htmlFor={radioId} className="cr01-pay-title">{label}</label>
+                      <p className="cr01-pay-hint">{hint}</p>
+                    </div>
+                    <div className="cr01-pay-badges" aria-hidden="true">
+                      {value === 'TARJETA' ? (
+                        <>
+                          <span className="cr01-brand-chip cr01-visa" title="Visa">
+                            <svg width="30" height="10" viewBox="0 0 36 12" fill="none"><text x="1" y="10" fill="#1A1F71" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="11" letterSpacing="-0.5">VISA</text></svg>
+                          </span>
+                          <span className="cr01-brand-chip cr01-mc" title="Mastercard">
+                            <svg width="24" height="14" viewBox="0 0 24 14"><circle cx="9" cy="7" r="6" fill="#EB001B" /><circle cx="15" cy="7" r="6" fill="#F79E1B" fillOpacity="0.88" /></svg>
+                          </span>
+                          <span className="cr01-instant-pill"><Sparkles size={11} /> Inmediato</span>
+                        </>
+                      ) : value === 'TRANSFERENCIA' ? (
+                        <span className="cr01-subtle-pill">Sin comisión</span>
+                      ) : (
+                        <span className="cr01-subtle-pill">Ventanilla</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {active && (
+                    <div className="cr01-pay-body">
+                      {value === 'TARJETA' ? (
+                        <div className="cr01-card-payment">
+                          <div className="cr01-card-header">
+                            <h2>Pago con tarjeta</h2>
+                            <span className="cr01-security-pill"><ShieldCheck size={14} aria-hidden="true" /> Pasarela segura · USD</span>
+                          </div>
+                          <div className="cr01-amount-box">
+                            <span>Importe de la reserva</span>
+                            <strong>{money(reservation.total)}</strong>
+                          </div>
+                          <div className="cr01-trust-strip" aria-hidden="true">
+                            <span><Check size={13} /> Confirmación automática</span>
+                            <span><LockKeyhole size={13} /> Cifrado SSL externo</span>
+                            <span><Sparkles size={13} /> Boleto QR al instante</span>
+                          </div>
+                          <p className="small-copy">Ingresa los datos de tu tarjeta únicamente en la pasarela de pago.</p>
+                          {paymentUrl ? (
+                            <div className="cr01-gateway-ready">
+                              <a className="button primary full-width" href={paymentUrl} target="_blank" rel="noopener noreferrer">
+                                Continuar en la pasarela <ExternalLink size={16} aria-hidden="true" />
+                              </a>
+                              <p className="cr01-gateway-note">
+                                <Check size={14} aria-hidden="true" /> Sesión segura generada en Stripe Checkout (checkout.stripe.com).
+                              </p>
+                            </div>
+                          ) : (
+                            <button type="button" className="button primary full-width" disabled={busy || isDemo} onClick={payByCard}>
+                              {busy ? 'Conectando…' : 'Pagar con tarjeta'}
+                            </button>
+                          )}
+                          <p className="cr01-card-footnote small-copy">
+                            <LockKeyhole size={14} aria-hidden="true" /> No almacenamos números de tarjeta ni CVV. El boleto estará disponible cuando la cooperativa confirme el pago. Puedes consultar el estado con tu código de reserva.
+                          </p>
+                          {isDemo && <p role="status">El pago con tarjeta no está disponible en la demostración.</p>}
+                          {error && <p role="alert" className="inline-error">{error}</p>}
+                        </div>
+                      ) : (
+                        <div className="cr01-bank-panel">
+                          <div className="cr01-card-header">
+                            <h2>Envía tu comprobante</h2>
+                            <span className="cr01-security-pill cr01-bank-badge">
+                              {method === 'DEPOSITO' ? 'Depósito' : 'Transferencia'} · USD
+                            </span>
+                          </div>
+                          <div className="cr01-amount-box">
+                            <span>Total a transferir o depositar</span>
+                            <strong>{money(reservation.total)}</strong>
+                          </div>
+                          <p className="small-copy">
+                            Transferencia o depósito por <strong>{money(reservation.total)}</strong> a la cooperativa de tu viaje.
+                          </p>
+                          {isDemo ? (
+                            <div className="notice">
+                              <p>Esta es una demostración. Usa un archivo de prueba y no realices una transferencia.</p>
+                            </div>
+                          ) : bank?.banco && bank?.cuenta_bancaria ? (
+                            <dl className="bank-details">
+                              <div><dt>Beneficiario</dt><dd>{bank.nombre}</dd></div>
+                              <div><dt>Banco</dt><dd>{bank.banco}</dd></div>
+                              <div>
+                                <dt>Cuenta</dt>
+                                <dd className="cr01-account-copy">
+                                  <span>{bank.cuenta_bancaria}</span>
+                                  <button
+                                    type="button"
+                                    className="cr01-copy-btn"
+                                    aria-label="Copiar número de cuenta"
+                                    onClick={() => copyText(bank.cuenta_bancaria, 'account')}
+                                  >
+                                    {copied === 'account' ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar</>}
+                                  </button>
+                                </dd>
+                              </div>
+                            </dl>
+                          ) : (
+                            <p className="inline-error">
+                              No tenemos los datos bancarios confirmados. Consúltalos directamente con la cooperativa antes de transferir.
+                            </p>
+                          )}
+                          <form onSubmit={upload} className="receipt-form">
+                            <label className="file-field">
+                              <FileUp size={26} />
+                              <span>Comprobante de pago</span>
+                              <span className="small-copy">PNG, JPG o PDF · máximo 5 MB</span>
+                              <input
+                                ref={inputRef}
+                                type="file"
+                                accept="image/png,image/jpeg,image/jpg,application/pdf,.png,.jpg,.jpeg,.pdf"
+                                disabled={busy}
+                                onChange={event => {
+                                  const next = event.target.files?.[0];
+                                  setFile(next || null);
+                                  setError(next ? receiptError(next) : '');
+                                }}
+                              />
+                            </label>
+                            {file && <p className="file-name">{file.name}</p>}
+                            {error && <p className="inline-error" role="alert">{error}</p>}
+                            <button className="button primary full-width" disabled={busy || !file || Boolean(receiptError(file))}>
+                              {busy ? 'Enviando comprobante…' : 'Enviar comprobante'}
+                              <ArrowRight size={16} />
+                            </button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </fieldset>
       ) : (
         <div className={`notice ${['expired', 'rejected', 'cancelled'].includes(status) ? 'error' : ''}`} role="status">
           <CheckCircle2 size={25} />

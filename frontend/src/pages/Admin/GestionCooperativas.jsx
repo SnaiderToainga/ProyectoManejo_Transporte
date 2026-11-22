@@ -201,6 +201,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       const resp = await fetch(`${API_URL}/admin/cooperativas/${id}`, {
         method: 'DELETE',
         headers: {
+          ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
           'x-user-role': authUser?.rol || 'SUPERADMIN',
           'x-user-cooperativa-id': String(coopId || '')
         }
@@ -253,7 +254,12 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     try {
       await fetch(`${API_URL}/admin/buses/${bus.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
+          'x-user-role': authUser?.rol || '',
+          'x-user-cooperativa-id': String(coopId || '')
+        },
         body: JSON.stringify({ estado: nuevoEstado })
       });
     } catch (e) {
@@ -267,7 +273,14 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   const handleEliminarBus = async (id, disco) => {
     if (!confirm(`¿Seguro que deseas dar de baja y eliminar el bus #${disco}?`)) return;
     try {
-      const resp = await fetch(`${API_URL}/admin/buses/${id}`, { method: 'DELETE' });
+      const resp = await fetch(`${API_URL}/admin/buses/${id}`, {
+        method: 'DELETE',
+        headers: {
+          ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}),
+          'x-user-role': authUser?.rol || '',
+          'x-user-cooperativa-id': String(coopId || '')
+        }
+      });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error);
       setBuses(buses.filter(b => b.id !== id));

@@ -5,6 +5,9 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors());
+const bookingController = require('./controllers/bookingController');
+// Webhook Stripe requiere cuerpo crudo (raw JSON) antes del parser JSON global.
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), bookingController.procesarWebhookStripe);
 app.use(express.json());
 
 // Servir la carpeta de comprobantes de forma estática
@@ -17,9 +20,11 @@ const adminRoutes = require('./routes/adminRoutes');
 const officeRoutes = require('./routes/officeRoutes');
 const choferRoutes = require('./routes/choferRoutes');
 const planningRoutes = require('./routes/planningRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 
 app.use('/api', catalogRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/clientes', customerRoutes);
 app.use('/api', officeRoutes);
 app.use('/api/oficina', officeRoutes);
 app.use('/api', bookingRoutes);

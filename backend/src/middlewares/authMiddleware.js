@@ -1,10 +1,10 @@
 exports.verifyCooperativaOwnership = (req, res, next) => {
-  const userRole = req.headers['x-user-role'] || (req.user && req.user.rol);
-  const userCoopId = req.headers['x-user-cooperativa-id'] || (req.user && req.user.cooperativa_id);
+  const userRole = req.user && req.user.rol;
+  const userCoopId = req.user && req.user.cooperativa_id;
   const targetCoopId = req.params.id;
 
   // Si es SuperAdmin de la UTA, tiene acceso global
-  if (userRole === 'SUPERADMIN' || userRole === 'SUPER_ADMIN') {
+  if (userRole === 'SUPERADMIN') {
     return next();
   }
 
