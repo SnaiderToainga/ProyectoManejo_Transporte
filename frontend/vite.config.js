@@ -10,8 +10,8 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': { target, changeOrigin: true },
-        '/uploads': { target, changeOrigin: true }
-      }
-    }
+        '/uploads': { target, changeOrigin: true },
+      },
+    },
   };
 });

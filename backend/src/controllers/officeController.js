@@ -5,7 +5,21 @@ const { lockTrip, occupiedReservation, occupiedSeats, seatIds, tripSeats } = req
 const db = require('../config/db');
 const pool = db.pool || db;
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { officeScope, assertOfficeTrip } = require('../services/officeAccess');
+
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+
+function checkLocalReceiptExists(comprobanteUrl) {
+  if (!comprobanteUrl || typeof comprobanteUrl !== 'string') return false;
+  if (/^https?:\/\//i.test(comprobanteUrl)) return true;
+  const clean = comprobanteUrl.replace(/^\/?uploads\//i, '').split('?')[0];
+  if (!clean || clean.includes('..') || clean.includes('/') || clean.includes('\\')) return false;
+  const fullPath = path.resolve(UPLOADS_DIR, clean);
+  if (!fullPath.startsWith(UPLOADS_DIR + path.sep)) return false;
+  return fs.existsSync(fullPath);
+}
 
 // 1. Obtener reservas con comprobante en estado PENDIENTE
 exports.getReservasPendientes = async (req, res) => {
@@ -30,11 +44,11 @@ exports.getReservasPendientes = async (req, res) => {
         b.numero_disco,
         b.placa,
         COALESCE(
-          (SELECT nombre_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
+          (array_agg(db.nombre_pasajero ORDER BY db.id) FILTER (WHERE db.id IS NOT NULL))[1],
           'Cliente Pasajero'
         ) AS cliente_nombre,
         COALESCE(
-          (SELECT cedula_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
+          (array_agg(db.cedula_pasajero ORDER BY db.id) FILTER (WHERE db.id IS NOT NULL))[1],
           ''
         ) AS cliente_cedula,
         COALESCE(
@@ -49,7 +63,7 @@ exports.getReservasPendientes = async (req, res) => {
               'descuento', db.descuento,
               'numero_asiento', a.numero_asiento,
               'categoria', a.categoria
-            )
+            ) ORDER BY db.id
           ) FILTER (WHERE db.id IS NOT NULL), '[]'
         ) AS pasajeros
       FROM reservas r
@@ -66,7 +80,11 @@ exports.getReservasPendientes = async (req, res) => {
       ORDER BY r.creado_en DESC;
     `;
     const { rows } = await pool.query(query, officeScope(req));
-    res.json(rows);
+    const enriched = rows.map(row => ({
+      ...row,
+      comprobante_disponible: row.comprobante_url ? checkLocalReceiptExists(row.comprobante_url) : false
+    }));
+    res.json(enriched);
   } catch (error) {
     console.error('Error al obtener reservas pendientes:', error);
     res.status(500).json({ error: 'Error interno al obtener reservas pendientes' });
