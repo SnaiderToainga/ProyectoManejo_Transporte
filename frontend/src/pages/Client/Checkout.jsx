@@ -653,17 +653,18 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
                   </span>
                 </div>
               ) : (
-                <div className="cr01-checkout-account">
+                <div className="cr01-checkout-account is-guest-friendly">
                   <div>
-                    <strong>¿Quieres guardar tu historial de boletos?</strong>
+                    <span className="client-guest-badge">✓ Compra rápida como visitante (no necesitas cuenta)</span>
+                    <strong>¿Deseas guardar tus boletos en una cuenta personal? (Opcional)</strong>
                     <p className="muted">
-                      Inicia sesión o regístrate para autocompletar tus datos y consultar tus compras cuando quieras, o continúa como visitante.
+                      Puedes llenar el formulario de abajo directamente sin iniciar sesión, o ingresar a tu cuenta para autocompletar tus datos y guardar el historial.
                     </p>
                   </div>
                   <div className="cr01-checkout-account-actions">
                     <button
                       type="button"
-                      className="button primary"
+                      className="button secondary"
                       disabled={busy}
                       onClick={() => (onCustomerSession ? setAccountModal('login') : onAccount?.())}
                     >

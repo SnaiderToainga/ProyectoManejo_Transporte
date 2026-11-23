@@ -8,7 +8,9 @@ import {
   CheckCircle2,
   ArrowRight,
   Eye,
-  EyeOff
+  EyeOff,
+  Plus,
+  X
 } from 'lucide-react';
 import { planningRequest } from '../../lib/planningApi.js';
 import { shortTime, today } from '../../lib/format.js';
@@ -24,6 +26,7 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
   const [link, setLink] = useState({ grupo_buses_id: '', grupo_frecuencias_id: '' });
   const [branch, setBranch] = useState({ nombre: '', localidad: '' });
   const [staff, setStaff] = useState({ nombre: '', correo: '', telefono: '', password: '', sucursal_id: '' });
+  const [addSelections, setAddSelections] = useState({});
   const [showPwd, setShowPwd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -31,6 +34,9 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
 
   const items = group.clase === 'BUSES' ? catalogo.buses : catalogo.frecuencias;
   const freeItems = items.filter(item => !item.grupo_id);
+  const freeBuses = catalogo.buses.filter(b => !b.grupo_id);
+  const freeFrecuencias = catalogo.frecuencias.filter(f => !f.grupo_id);
+
   const hasBusGroup = catalogo.grupos_buses.length > 0;
   const hasFrecGroup = catalogo.grupos_frecuencias.length > 0;
   const hasLink = catalogo.vinculos.length > 0;
@@ -53,6 +59,48 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
       await planningRequest(usuario, path, { method: 'POST', data: { ...data, cooperativa_id: Number(cooperativaId) } });
       reset();
       setMessage('✓ Registro guardado correctamente.');
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAddMemberToGroup(clase, groupId) {
+    const key = `${clase}-${groupId}`;
+    const selectedId = Number(addSelections[key]);
+    if (!selectedId) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await planningRequest(usuario, `/planificacion/grupos/${groupId}/miembros`, {
+        method: 'POST',
+        data: { cooperativa_id: Number(cooperativaId), clase, miembros: [selectedId] }
+      });
+      setAddSelections(prev => ({ ...prev, [key]: '' }));
+      setMessage(clase === 'BUSES' ? '✓ Bus añadido al grupo correctamente.' : '✓ Frecuencia añadida al grupo correctamente.');
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveMemberFromGroup(clase, groupId, memberId, label) {
+    if (!confirm(`¿Retirar "${label}" de este grupo? Quedará disponible para asignarlo a otro grupo.`)) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await planningRequest(
+        usuario,
+        `/planificacion/grupos/${groupId}/miembros/${memberId}?cooperativa_id=${Number(cooperativaId)}&clase=${clase}`,
+        { method: 'DELETE' }
+      );
+      setMessage('✓ Miembro retirado del grupo.');
       onChanged();
     } catch (err) {
       setError(err.message);
@@ -109,6 +157,142 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
         </p>
       )}
 
+      {/* Panel interactivo para AGREGAR / QUITAR buses o frecuencias en grupos YA EXISTENTES */}
+      {(hasBusGroup || hasFrecGroup) && (
+        <div className="setup-existing-groups">
+          <div className="setup-existing-head">
+            <div>
+              <h3>🛠️ Administrar miembros de grupos existentes</h3>
+              <p className="setup-card-desc" style={{ margin: '0.15rem 0 0' }}>
+                ¿Creaste un bus nuevo o una frecuencia nueva? Agrégalo directamente a un grupo ya existente en 1 clic.
+              </p>
+            </div>
+            <div className="setup-free-counters">
+              <span className="setup-tag">🚌 Buses libres: <strong>{freeBuses.length}</strong></span>
+              <span className="setup-tag">🛣️ Frecuencias libres: <strong>{freeFrecuencias.length}</strong></span>
+            </div>
+          </div>
+
+          <div className="setup-groups-grid">
+            {catalogo.grupos_buses.map(g => {
+              const members = catalogo.buses.filter(b => Number(b.grupo_id) === Number(g.id));
+              const selKey = `BUSES-${g.id}`;
+              return (
+                <div key={selKey} className="setup-group-card">
+                  <div className="setup-group-card-top">
+                    <div>
+                      <strong>🚌 {g.nombre}</strong>
+                      <span className="setup-group-type">{g.tipo_operacion} · {members.length} buses</span>
+                    </div>
+                  </div>
+
+                  <div className="setup-member-chips">
+                    {members.map(b => (
+                      <span key={b.id} className="setup-member-chip bus">
+                        <span>#{b.numero_disco} · {b.placa}</span>
+                        {members.length > 1 && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            title={`Retirar Unidad #${b.numero_disco} del grupo`}
+                            onClick={() => handleRemoveMemberFromGroup('BUSES', g.id, b.id, `Unidad #${b.numero_disco}`)}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="setup-add-row">
+                    <select
+                      disabled={busy || freeBuses.length === 0}
+                      value={addSelections[selKey] || ''}
+                      onChange={e => setAddSelections(prev => ({ ...prev, [selKey]: e.target.value }))}
+                    >
+                      <option value="">
+                        {freeBuses.length ? '+ Seleccionar bus libre para añadir…' : 'No hay buses libres para añadir'}
+                      </option>
+                      {freeBuses.map(b => (
+                        <option key={b.id} value={b.id}>
+                          Unidad #{b.numero_disco} · {b.placa} ({b.capacidad} plazas · {b.estado})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={busy || !addSelections[selKey]}
+                      onClick={() => handleAddMemberToGroup('BUSES', g.id)}
+                    >
+                      <Plus size={14} /> Añadir
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {catalogo.grupos_frecuencias.map(g => {
+              const members = catalogo.frecuencias.filter(f => Number(f.grupo_id) === Number(g.id));
+              const selKey = `FRECUENCIAS-${g.id}`;
+              return (
+                <div key={selKey} className="setup-group-card">
+                  <div className="setup-group-card-top">
+                    <div>
+                      <strong>🛣️ {g.nombre}</strong>
+                      <span className="setup-group-type">{g.tipo_operacion} · {members.length} frecuencias</span>
+                    </div>
+                  </div>
+
+                  <div className="setup-member-chips">
+                    {members.map(f => (
+                      <span key={f.id} className="setup-member-chip frec">
+                        <span>{f.origen} → {f.destino} ({shortTime(f.hora_salida)})</span>
+                        {members.length > 1 && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            title={`Retirar ${f.origen} → ${f.destino} del grupo`}
+                            onClick={() => handleRemoveMemberFromGroup('FRECUENCIAS', g.id, f.id, `${f.origen} → ${f.destino}`)}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="setup-add-row">
+                    <select
+                      disabled={busy || freeFrecuencias.length === 0}
+                      value={addSelections[selKey] || ''}
+                      onChange={e => setAddSelections(prev => ({ ...prev, [selKey]: e.target.value }))}
+                    >
+                      <option value="">
+                        {freeFrecuencias.length ? '+ Seleccionar frecuencia libre…' : 'No hay frecuencias libres para añadir'}
+                      </option>
+                      {freeFrecuencias.map(f => (
+                        <option key={f.id} value={f.id}>
+                          {f.origen} → {f.destino} · {shortTime(f.hora_salida)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={busy || !addSelections[selKey]}
+                      onClick={() => handleAddMemberToGroup('FRECUENCIAS', g.id)}
+                    >
+                      <Plus size={14} /> Añadir
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Reordenado en 2 bloques lógicos: Operación de Rutas (Pasos 1-2) y Oficinas/Taquilla (Pasos 3-4) */}
       <div className="planning-panels">
         {/* PASO 1 */}
@@ -128,14 +312,14 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
                 className={group.clase === 'BUSES' ? 'active' : ''}
                 onClick={() => setGroup({ ...group, clase: 'BUSES', miembros: [] })}
               >
-                <Bus size={15} /> Buses ({catalogo.buses.filter(b => !b.grupo_id).length} libres)
+                <Bus size={15} /> Buses ({freeBuses.length} libres)
               </button>
               <button
                 type="button"
                 className={group.clase === 'FRECUENCIAS' ? 'active' : ''}
                 onClick={() => setGroup({ ...group, clase: 'FRECUENCIAS', miembros: [] })}
               >
-                <Route size={15} /> Frecuencias ({catalogo.frecuencias.filter(f => !f.grupo_id).length} libres)
+                <Route size={15} /> Frecuencias ({freeFrecuencias.length} libres)
               </button>
             </div>
 
@@ -283,20 +467,6 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
                 ))}
               </div>
             )}
-
-            <h4>Grupos registrados</h4>
-            <div className="setup-tags">
-              {catalogo.grupos_buses.map(g => (
-                <span key={`b-${g.id}`} className="setup-tag">
-                  🚌 {g.nombre} ({catalogo.buses.filter(b => b.grupo_id === g.id).length})
-                </span>
-              ))}
-              {catalogo.grupos_frecuencias.map(g => (
-                <span key={`f-${g.id}`} className="setup-tag">
-                  🛣️ {g.nombre} ({catalogo.frecuencias.filter(f => f.grupo_id === g.id).length})
-                </span>
-              ))}
-            </div>
           </div>
         </form>
 

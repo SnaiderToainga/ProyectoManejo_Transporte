@@ -41,7 +41,13 @@ export default function App() {
 
   const [code, setCode] = useState(getUrlCode);
   const [historyToken, setHistoryToken] = useState(historyTokenFromHash);
-  const [customerToken, setCustomerToken] = useState(() => { try { return sessionStorage.getItem('transporte_cliente_token') || ''; } catch { return ''; } });
+  const [customerToken, setCustomerToken] = useState(() => {
+    try {
+      return sessionStorage.getItem('transporte_cliente_token') || localStorage.getItem('transporte_cliente_token') || '';
+    } catch {
+      return '';
+    }
+  });
   const [customer, setCustomer] = useState(null);
   const [customerError, setCustomerError] = useState('');
   const customerFirstName = customerToken && customer?.nombre
@@ -49,11 +55,17 @@ export default function App() {
     : '';
   const clearCustomer = () => {
     setCustomerToken(''); setHistoryToken(''); setCustomer(null); setCustomerError(''); setCheckoutDraft(null);
-    try { sessionStorage.removeItem('transporte_cliente_token'); } catch {}
+    try {
+      sessionStorage.removeItem('transporte_cliente_token');
+      localStorage.removeItem('transporte_cliente_token');
+    } catch {}
   };
   const handleCustomerSession = (result) => {
     setCustomerToken(result.token); setCustomer(result.cliente); setCustomerError('');
-    try { sessionStorage.setItem('transporte_cliente_token', result.token); } catch {}
+    try {
+      sessionStorage.setItem('transporte_cliente_token', result.token);
+      localStorage.setItem('transporte_cliente_token', result.token);
+    } catch {}
   };
   useEffect(() => {
     if (!customerToken) return;
@@ -65,7 +77,13 @@ export default function App() {
       }
     }).catch(error => {
       if (!controller.signal.aborted) {
-        if ([401, 403].includes(error.status)) { setCustomerToken(''); setCustomer(null); try { sessionStorage.removeItem('transporte_cliente_token'); } catch {} }
+        if ([401, 403].includes(error.status)) {
+          setCustomerToken(''); setCustomer(null);
+          try {
+            sessionStorage.removeItem('transporte_cliente_token');
+            localStorage.removeItem('transporte_cliente_token');
+          } catch {}
+        }
         setCustomerError('No pudimos verificar tu sesión de cliente. Puedes volver a ingresar o continuar como visitante.');
       }
     });
@@ -345,13 +363,25 @@ export default function App() {
                 <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
                   Buscar viaje
                 </button>
+                <button className={`nav-link ${page === 'mis-compras' ? 'active' : ''}`} onClick={goHistory}>
+                  Mis compras
+                </button>
+                <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
+                  Mi boleto
+                </button>
                 <button
-                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
+                  className={`nav-link ${page === 'mi-cuenta' ? 'active' : ''}`}
                   onClick={goCustomer}
                 >
                   <span className="nav-account-label">
                     <User size={15} aria-hidden="true" />
                     {`Hola, ${customerFirstName}`}
+                  </span>
+                </button>
+                <button className="nav-link" onClick={clearCustomer} title="Cerrar sesión de cliente">
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <LogOut size={15} aria-hidden="true" />
+                    Salir
                   </span>
                 </button>
               </>
@@ -454,7 +484,19 @@ export default function App() {
         ) : page === 'mi-cuenta' ? (
           <>
             {customerError && <p role="alert" className="inline-error">{customerError}</p>}
-            <CustomerAccount customer={customer} onSession={handleCustomerSession} onLogout={clearCustomer} onHistory={goHistory} onTicket={() => goTicket()} onContinue={trip ? resumePurchase : goSearch} />
+            <CustomerAccount
+              customer={customer}
+              token={customerToken}
+              onSession={handleCustomerSession}
+              onLogout={clearCustomer}
+              onHistory={goHistory}
+              onTicket={() => goTicket()}
+              onVerBoleto={goTicket}
+              onSearch={goSearch}
+              onAdminLogin={() => goLogin()}
+              hasActiveTrip={Boolean(trip)}
+              onContinue={trip ? resumePurchase : goSearch}
+            />
           </>
         ) : page === 'mis-compras' ? (
           <>

@@ -45,6 +45,110 @@ async function createGroup(client, cooperativeId, data) {
   return group.rows[0];
 }
 
+async function addGroupMembers(client, cooperativeId, groupIdParam, data) {
+  const groupId = positiveId(groupIdParam, 'Grupo');
+  const clase = String(data?.clase || 'BUSES').toUpperCase();
+  if (!['BUSES', 'FRECUENCIAS'].includes(clase)) throw planningError('Clase de grupo inválida.');
+  const ids = seatIds(data?.miembros);
+  if (!ids || !ids.length || ids.length > 100) {
+    throw planningError('Selecciona al menos un miembro válido para agregar al grupo.');
+  }
+
+  const isBus = clase === 'BUSES';
+  const groupTable = isBus ? 'grupos_buses' : 'grupos_frecuencias';
+  const memberTable = isBus ? 'grupo_bus_miembros' : 'grupo_frecuencia_miembros';
+  const col = isBus ? 'bus_id' : 'frecuencia_id';
+  const source = isBus ? 'buses' : 'frecuencias';
+
+  const groupCheck = await client.query(
+    `SELECT id FROM ${groupTable} WHERE id=$1 AND cooperativa_id=$2`,
+    [groupId, cooperativeId]
+  );
+  if (!groupCheck.rows[0]) throw planningError('El grupo no pertenece a tu cooperativa.', 403);
+
+  const validMembers = await client.query(
+    `SELECT id FROM ${source} WHERE cooperativa_id=$1 AND id=ANY($2::int[]) ${isBus ? '' : 'AND activo=TRUE'} FOR SHARE`,
+    [cooperativeId, ids]
+  );
+  if (validMembers.rows.length !== ids.length) {
+    throw planningError('Los miembros seleccionados deben pertenecer a tu cooperativa.', 403);
+  }
+
+  const existing = await client.query(
+    `SELECT ${col} AS member_id, grupo_id FROM ${memberTable} WHERE ${col}=ANY($1::int[])`,
+    [ids]
+  );
+  const inOtherGroup = existing.rows.find(r => Number(r.grupo_id) !== groupId);
+  if (inOtherGroup) {
+    throw planningError(
+      isBus
+        ? 'El bus seleccionado ya pertenece a otro grupo. Retíralo primero de ese grupo.'
+        : 'La frecuencia seleccionada ya pertenece a otro grupo. Retírala primero de ese grupo.',
+      409
+    );
+  }
+
+  const alreadyHere = new Set(existing.rows.map(r => Number(r.member_id)));
+  const toInsert = ids.filter(id => !alreadyHere.has(id));
+  if (!toInsert.length) return { grupo_id: groupId, agregados: 0 };
+
+  if (!isBus) {
+    const countRes = await client.query(`SELECT COUNT(*)::int AS total FROM ${memberTable} WHERE grupo_id=$1`, [groupId]);
+    if ((countRes.rows[0]?.total || 0) + toInsert.length > 20) {
+      throw planningError('Un grupo admite hasta 20 frecuencias.');
+    }
+  }
+
+  await client.query(
+    `INSERT INTO ${memberTable}(${col}, grupo_id) SELECT unnest($1::int[]), $2`,
+    [toInsert, groupId]
+  );
+  return { grupo_id: groupId, agregados: toInsert.length };
+}
+
+async function removeGroupMember(client, cooperativeId, groupIdParam, memberIdParam, claseParam) {
+  const groupId = positiveId(groupIdParam, 'Grupo');
+  const memberId = positiveId(memberIdParam, 'Miembro');
+  const clase = String(claseParam || 'BUSES').toUpperCase();
+  if (!['BUSES', 'FRECUENCIAS'].includes(clase)) throw planningError('Clase de grupo inválida.');
+
+  const isBus = clase === 'BUSES';
+  const groupTable = isBus ? 'grupos_buses' : 'grupos_frecuencias';
+  const memberTable = isBus ? 'grupo_bus_miembros' : 'grupo_frecuencia_miembros';
+  const col = isBus ? 'bus_id' : 'frecuencia_id';
+
+  const groupCheck = await client.query(
+    `SELECT id FROM ${groupTable} WHERE id=$1 AND cooperativa_id=$2`,
+    [groupId, cooperativeId]
+  );
+  if (!groupCheck.rows[0]) throw planningError('El grupo no pertenece a tu cooperativa.', 403);
+
+  const countRes = await client.query(`SELECT COUNT(*)::int AS total FROM ${memberTable} WHERE grupo_id=$1`, [groupId]);
+  if ((countRes.rows[0]?.total || 0) <= 1) {
+    throw planningError('El grupo debe conservar al menos un miembro.', 409);
+  }
+
+  if (isBus) {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+    const activeTrips = await client.query(
+      `SELECT id FROM programacion_viajes
+       WHERE bus_id=$1 AND grupo_buses_id=$2 AND fecha_viaje >= $3 AND estado <> 'CANCELADO'
+       LIMIT 1`,
+      [memberId, groupId, today]
+    );
+    if (activeTrips.rows.length) {
+      throw planningError('Este bus tiene viajes programados a futuro en este grupo. Reemplázalo en la matriz antes de retirarlo.', 409);
+    }
+  }
+
+  const del = await client.query(
+    `DELETE FROM ${memberTable} WHERE grupo_id=$1 AND ${col}=$2 RETURNING ${col}`,
+    [groupId, memberId]
+  );
+  if (!del.rows.length) throw planningError('El miembro no pertenece a este grupo.', 404);
+  return { grupo_id: groupId, eliminado: memberId };
+}
+
 async function linkGroups(client, cooperativeId, data) {
   const busesId = positiveId(data.grupo_buses_id);
   const frequenciesId = positiveId(data.grupo_frecuencias_id);
@@ -222,4 +326,4 @@ async function saveMatrix(client, cooperativeId, userId, data) {
   return { actualizados: changes.length };
 }
 
-module.exports = { catalog, createGroup, linkGroups, createBranch, matrix, saveMatrix };
+module.exports = { catalog, createGroup, addGroupMembers, removeGroupMember, linkGroups, createBranch, matrix, saveMatrix };

@@ -11,7 +11,7 @@ function action(handler, { write = false, status = 200 } = {}) {
   return async (req, res) => {
     let client;
     try {
-      if (req.method !== 'GET' && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))) {
+      if (!['GET', 'DELETE'].includes(req.method) && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))) {
         throw planningError('Envía un objeto JSON válido.');
       }
       const requested = req.query.cooperativa_id ?? req.body?.cooperativa_id;
@@ -42,6 +42,8 @@ function action(handler, { write = false, status = 200 } = {}) {
 const managers = requireRoles('ADMIN_COOP', 'SUPERADMIN');
 router.get('/catalogo', action((client, coop) => planning.catalog(client, coop)));
 router.post('/grupos', managers, action((client, coop, req) => planning.createGroup(client, coop, req.body), { write: true, status: 201 }));
+router.post('/grupos/:id/miembros', managers, action((client, coop, req) => planning.addGroupMembers(client, coop, req.params.id, req.body), { write: true }));
+router.delete('/grupos/:id/miembros/:miembroId', managers, action((client, coop, req) => planning.removeGroupMember(client, coop, req.params.id, req.params.miembroId, req.query.clase || req.body?.clase), { write: true }));
 router.post('/vinculos', managers, action((client, coop, req) => planning.linkGroups(client, coop, req.body), { write: true }));
 router.post('/sucursales', managers, action((client, coop, req) => planning.createBranch(client, coop, req.body), { write: true, status: 201 }));
 router.get('/matriz', action((client, coop, req) => planning.matrix(client, coop, req.query)));
