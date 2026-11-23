@@ -7,13 +7,24 @@ types.setTypeParser(1114, str => (str ? new Date(str.replace(' ', 'T') + 'Z') : 
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
   ssl: {
     rejectUnauthorized: false
   }
 });
 
+let connectedLogged = false;
 pool.on('connect', () => {
-  console.log('Conectado a la base de datos Supabase');
+  if (!connectedLogged) {
+    connectedLogged = true;
+    console.log('Conectado a la base de datos Supabase');
+  }
+});
+
+pool.on('error', (err) => {
+  console.error('Error inesperado en el pool de PostgreSQL:', err.message);
 });
 
 module.exports = {

@@ -114,7 +114,7 @@ export default function SearchTrips({ onChoose }) {
       {error ? <div className="notice error" role="alert"><h3>No pudimos mostrar los viajes</h3><p>{error}</p><button className="button secondary" onClick={() => setQuery({ ...query })}>Reintentar</button>{!isDemo && <a className="text-link" href="?demo=1">Explorar una demostración</a>}</div>
         : loading ? <div className="empty-state">Buscando tu próximo destino…</div>
           : !trips.length ? <div className="empty-state"><BusFront size={32} /><h3>No hay viajes con estos filtros</h3><p>Prueba otra fecha, ruta u horario.</p><button className="button secondary" onClick={() => { const next = initialFilters(); next.fecha = filters.fecha; setFilters(next); setQuery(next); }}>Limpiar filtros</button></div>
-            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => {
+            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} paradasIntermedias={trips[0]?.paradas_intermedias} /><div className="trip-list">{trips.map(trip => {
               const seg = resolveTripSegment(trip, query.origen, query.destino);
               const { itinerary, totalSegments } = seg;
               const custom = customSegments[trip.programacion_id];
@@ -163,7 +163,7 @@ export default function SearchTrips({ onChoose }) {
                         <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', background: '#F1F5F9', border: '1px solid #CBD5E1', padding: '2px 10px', borderRadius: '6px' }}>
                           🚌 UNIDAD #{trip.numero_disco}
                         </span>
-                        <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos</span>
+                        <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos{trip.bus_layout?.pisos === 2 ? ' · 2 Pisos' : ''}</span>
                         <button type="button" className="inline-link" aria-label={`Ver más del bus ${trip.numero_disco}`} onClick={() => setBusDetalle(trip)}>Ver más</button>
                       </div>
                     </div>

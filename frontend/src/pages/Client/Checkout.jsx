@@ -472,7 +472,7 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
             precio: getPassengerPrice(seats[i], tipo)
           };
         })
-      });
+      }, customerToken);
 
       if (!result.reserva?.codigo_reserva) {
         throw new Error('No recibimos el código de la reserva. Consulta con la cooperativa antes de reintentar.');

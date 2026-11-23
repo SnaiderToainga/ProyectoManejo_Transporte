@@ -62,14 +62,20 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
   }
 
   return (
-    <div style={onClose ? styles.modalWrapper : {}}>
-      <div style={styles.container}>
+    <div style={onClose ? styles.modalWrapper : {}} onClick={onClose || undefined}>
+      <div
+        role={onClose ? 'dialog' : undefined}
+        aria-modal={onClose ? 'true' : undefined}
+        style={onClose ? { ...styles.container, ...styles.modalSurface } : styles.container}
+        onClick={(e) => e.stopPropagation()}
+      >
         {onClose && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0F172A', fontWeight: '800' }}>Personalización de Identidad Visual · {coop?.nombre}</h2>
             <button
+              type="button"
               onClick={onClose}
-              style={{ background: '#F1F5F9', border: 'none', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontWeight: '700', color: '#475569' }}
+              style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontWeight: '700', color: '#0F172A' }}
             >
               ✕ Cerrar
             </button>
@@ -153,9 +159,11 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '10px', padding: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
                 {logoUrl ? (
                   <img
+                    key={`logo-form-${logoUrl}`}
                     src={logoUrl}
                     alt={`Vista previa ${coop?.nombre}`}
                     style={{ width: '84px', height: '84px', borderRadius: '14px', objectFit: 'cover', backgroundColor: '#FFFFFF', border: `3px solid ${color}`, padding: '3px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}
+                    onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 ) : (
@@ -221,14 +229,16 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
               <div style={styles.ticketCoopInfo}>
                 {logoUrl && (
                   <img
+                    key={`logo-ticket-${logoUrl}`}
                     src={logoUrl}
                     alt="Logo"
                     style={styles.ticketLogo}
-                    onError={(e) => { e.target.style.display = 'none'; }}
+                    onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 )}
                 <div style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: '13px' }}>
-                  {coop.nombre.toUpperCase()}
+                  {String(coop?.nombre || '').toUpperCase()}
                 </div>
               </div>
               <div style={styles.ticketAntText}>
@@ -315,10 +325,18 @@ const styles = {
     backdropFilter: 'blur(4px)',
     zIndex: 9999,
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    padding: '1.5rem',
+    padding: '1.5rem 1rem',
     overflowY: 'auto'
+  },
+  modalSurface: {
+    width: 'min(980px, 100%)',
+    backgroundColor: '#F8FAFC',
+    borderRadius: '18px',
+    padding: '1.5rem',
+    boxShadow: '0 25px 60px rgba(0, 0, 0, 0.35)',
+    margin: 'auto 0'
   },
   container: {
     display: 'flex',

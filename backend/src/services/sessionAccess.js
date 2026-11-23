@@ -31,7 +31,8 @@ async function requireSession(req, res, next) {
   const userId = sessionUserId((req.headers.authorization || '').replace(/^Bearer /, ''));
   if (!userId) return res.status(401).json({ error: 'Inicia sesión nuevamente para continuar.' });
   try {
-    const result = await db.query(`SELECT u.id, u.rol, u.cooperativa_id
+    const result = await db.query(`SELECT u.id, u.rol, u.cooperativa_id,
+        CASE WHEN to_jsonb(u) ? 'bus_id' THEN (to_jsonb(u)->>'bus_id')::int ELSE NULL END AS bus_id
       FROM usuarios u LEFT JOIN cooperativas c ON c.id = u.cooperativa_id
       WHERE u.id = $1 AND (u.rol IN ('SUPERADMIN','CLIENTE') OR c.activo = TRUE)`, [userId]);
     if (!result.rows[0]) return res.status(401).json({ error: 'La sesión ya no está autorizada.' });

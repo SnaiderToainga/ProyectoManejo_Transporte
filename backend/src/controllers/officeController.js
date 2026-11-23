@@ -19,12 +19,13 @@ exports.getReservasPendientes = async (req, res) => {
         r.total AS total_pagado,
         r.estado,
         r.comprobante_url,
+        to_jsonb(r)->>'metodo_pago' AS metodo_pago,
         r.expira_en,
         r.creado_en,
         pv.fecha_viaje,
         pv.hora_salida_programada AS hora_salida,
-        f.origen,
-        f.destino,
+        COALESCE(r.origen_tramo, f.origen) AS origen,
+        COALESCE(r.destino_tramo, f.destino) AS destino,
         c.nombre AS cooperativa_nombre,
         b.numero_disco,
         b.placa,
@@ -34,7 +35,7 @@ exports.getReservasPendientes = async (req, res) => {
         ) AS cliente_nombre,
         COALESCE(
           (SELECT cedula_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
-          '1801234567'
+          ''
         ) AS cliente_cedula,
         COALESCE(
           json_agg(
@@ -43,6 +44,9 @@ exports.getReservasPendientes = async (req, res) => {
               'nombre_pasajero', db.nombre_pasajero,
               'cedula_pasajero', db.cedula_pasajero,
               'precio', db.precio,
+              'tipo_pasajero', db.tipo_pasajero,
+              'tarifa_base', db.tarifa_base,
+              'descuento', db.descuento,
               'numero_asiento', a.numero_asiento,
               'categoria', a.categoria
             )
@@ -56,6 +60,7 @@ exports.getReservasPendientes = async (req, res) => {
       LEFT JOIN detalle_boletos db ON db.reserva_id = r.id
       LEFT JOIN asientos a ON db.asiento_id = a.id
       WHERE r.estado = 'PENDIENTE'
+        AND (r.comprobante_url IS NOT NULL OR r.expira_en IS NULL OR r.expira_en > statement_timestamp())
         AND ($1::boolean OR (f.cooperativa_id=$2::int AND b.cooperativa_id=$2::int))
       GROUP BY r.id, pv.id, f.id, c.id, b.id
       ORDER BY r.creado_en DESC;
@@ -304,7 +309,8 @@ exports.getHojaRutaHoy = async (req, res) => {
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id
       JOIN cooperativas c ON f.cooperativa_id = c.id
-      WHERE (($3::date IS NULL AND pv.fecha_viaje >= CURRENT_DATE) OR pv.fecha_viaje=$3::date)
+      WHERE (($3::date IS NULL AND pv.fecha_viaje >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Guayaquil')::date) OR pv.fecha_viaje=$3::date)
+        AND pv.estado <> 'CANCELADO'
         AND ($1::boolean OR (f.cooperativa_id=$2::int AND b.cooperativa_id=$2::int))
       ORDER BY pv.fecha_viaje ASC, pv.hora_salida_programada ASC;
     `;
@@ -358,6 +364,46 @@ exports.actualizarEstadoViaje = async (req, res) => {
 };
 
 exports.aprobarComprobante = exports.validarComprobante;
+
+// 6. Autocompletado de pasajero por cédula en Taquilla (VENT-19)
+exports.buscarPasajeroPorCedula = async (req, res) => {
+  const cedula = String(req.params.cedula || '').trim();
+  if (!/^\d{10}$/.test(cedula)) {
+    return res.status(400).json({ error: 'La cédula debe tener 10 dígitos numéricos.' });
+  }
+  try {
+    const userRes = await pool.query(
+      `SELECT nombre, correo AS email, cedula
+       FROM usuarios
+       WHERE cedula = $1 AND rol = 'CLIENTE'
+       ORDER BY id DESC
+       LIMIT 1`,
+      [cedula]
+    );
+    if (userRes.rows[0]) {
+      return res.json({ pasajero: userRes.rows[0] });
+    }
+    const ticketRes = await pool.query(
+      `SELECT d.nombre_pasajero AS nombre,
+              d.cedula_pasajero AS cedula,
+              u.correo AS email
+       FROM detalle_boletos d
+       JOIN reservas r ON r.id = d.reserva_id
+       LEFT JOIN usuarios u ON u.id = r.usuario_id
+       WHERE d.cedula_pasajero = $1
+       ORDER BY r.creado_en DESC, d.id DESC
+       LIMIT 1`,
+      [cedula]
+    );
+    if (ticketRes.rows[0]) {
+      return res.json({ pasajero: ticketRes.rows[0] });
+    }
+    return res.status(404).json({ error: 'No se encontró un pasajero previo con esa cédula.' });
+  } catch (error) {
+    console.error('Error al buscar pasajero por cédula en taquilla:', error.message);
+    return res.status(500).json({ error: 'No se pudo consultar el pasajero.' });
+  }
+};
 exports.procesarComprobante = exports.validarComprobante;
 exports.validarReserva = exports.validarComprobante;
 exports.actualizarEstadoReserva = exports.validarComprobante;

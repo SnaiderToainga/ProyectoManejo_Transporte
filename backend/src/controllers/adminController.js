@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { hashPassword, verifyPassword } = require('../services/passwords');
 const { generarEstructuraCompensada } = require('../services/seatTemplateService');
+const busLayoutStore = require('../services/busLayoutStore');
 const { createSession } = require('../services/sessionAccess');
 const {
   validarEmail,
@@ -186,11 +187,21 @@ exports.getCooperativas = async (req, res) => {
       SELECT c.*,
              COUNT(b.id)::int AS total_buses,
              COUNT(CASE WHEN b.capacidad = 40 THEN 1 END)::int AS buses_40,
-             COUNT(CASE WHEN b.capacidad = 41 THEN 1 END)::int AS buses_41
+             COUNT(CASE WHEN b.capacidad = 41 THEN 1 END)::int AS buses_41,
+             mgr.nombre AS gerente_nombre,
+             mgr.correo AS gerente_correo,
+             mgr.telefono AS gerente_telefono
       FROM cooperativas c
       LEFT JOIN buses b ON b.cooperativa_id = c.id
+      LEFT JOIN LATERAL (
+        SELECT u.nombre, u.correo, u.telefono
+        FROM usuarios u
+        WHERE u.cooperativa_id = c.id AND u.rol = 'ADMIN_COOP'
+        ORDER BY u.id ASC
+        LIMIT 1
+      ) mgr ON TRUE
       ${whereClause}
-      GROUP BY c.id
+      GROUP BY c.id, mgr.nombre, mgr.correo, mgr.telefono
       ORDER BY c.id ASC
     `;
     const result = await db.query(query, params);
@@ -317,10 +328,16 @@ exports.crearCooperativa = async (req, res) => {
 
     await client.query('COMMIT');
 
+    const gerenteCreado = userRes.rows[0];
     res.status(201).json({
-      cooperativa: nuevaCoop,
-      gerente: userRes.rows[0],
-      mensaje: 'Cooperativa creada exitosamente'
+      cooperativa: {
+        ...nuevaCoop,
+        gerente_nombre: gerenteCreado?.nombre || null,
+        gerente_correo: gerenteCreado?.correo || null,
+        gerente_telefono: gerenteCreado?.telefono || null
+      },
+      gerente: gerenteCreado,
+      mensaje: 'Cooperativa y gerente creados exitosamente'
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -506,7 +523,7 @@ exports.actualizarCooperativa = async (req, res) => {
 
 exports.getUsuarios = async (req, res) => {
   if (req.user.rol !== 'SUPERADMIN' && req.query.cooperativa_id != null
-      && Number(req.query.cooperativa_id) !== req.user.cooperativa_id) {
+    && Number(req.query.cooperativa_id) !== req.user.cooperativa_id) {
     return res.status(403).json({ error: 'No puedes consultar usuarios de otra cooperativa.' });
   }
   const cooperativa_id = req.user.rol === 'SUPERADMIN' ? req.query.cooperativa_id : req.user.cooperativa_id;
@@ -539,7 +556,7 @@ exports.crearUsuario = async (req, res) => {
   const creador_coop_id = req.user.cooperativa_id;
 
   if (creador_rol === 'ADMIN_COOP' && (!['OFICINISTA', 'CHOFER'].includes(rol)
-      || (cooperativa_id != null && Number(cooperativa_id) !== creador_coop_id))) {
+    || (cooperativa_id != null && Number(cooperativa_id) !== creador_coop_id))) {
     return res.status(403).json({ error: 'Solo puedes crear oficinistas y choferes de tu cooperativa.' });
   }
 
@@ -653,7 +670,11 @@ exports.getBuses = async (req, res) => {
       ORDER BY b.id ASC
     `;
     const result = await db.query(query, params);
-    res.json(result.rows);
+    const enriched = result.rows.map((bus) => {
+      const layout = busLayoutStore.getBusLayout(bus.id);
+      return layout ? { ...bus, layout } : bus;
+    });
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -683,12 +704,16 @@ exports.getAsientosBus = async (req, res) => {
       [busId]
     );
 
+    const { layout, seats } = busLayoutStore.enrichSeatsWithLayout(seatsRes.rows, bus.id);
+
     res.json({
       bus_id: bus.id,
       numero_disco: bus.numero_disco,
       placa: bus.placa,
       capacidad: bus.capacidad,
-      asientos: seatsRes.rows
+      tiene_bano_posterior: bus.tiene_bano_posterior,
+      layout,
+      asientos: seats
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -705,9 +730,18 @@ exports.crearBus = async (req, res) => {
     tiene_bano_posterior,
     estado = 'OPERATIVO',
     columnas = 4,
+    columnas_piso2 = null,
+    pasillo_despues_col = null,
+    pasillo_despues_col_piso2 = null,
+    capacidad_piso1 = null,
     pisos = 1,
     celdasBloqueadas = [],
     celdasBano = [],
+    asientosVip = null,
+    asientosGrandes = null,
+    asientosPersonalizados = null,
+    plantilla_id = null,
+    plantilla_nombre = null,
     marca_chasis,
     carroceria,
     socio_nombre
@@ -718,7 +752,7 @@ exports.crearBus = async (req, res) => {
     : parsePositiveInt(cooperativa_id);
 
   if (req.user?.rol === 'ADMIN_COOP' && cooperativa_id !== undefined && cooperativa_id !== null
-      && Number(cooperativa_id) !== Number(req.user.cooperativa_id)) {
+    && Number(cooperativa_id) !== Number(req.user.cooperativa_id)) {
     return res.status(403).json({ error: 'Solo puedes registrar unidades dentro de tu cooperativa asignada.' });
   }
   if (!targetCoopId) {
@@ -758,14 +792,26 @@ exports.crearBus = async (req, res) => {
   try {
     estructura = generarEstructuraCompensada({
       capacidad: numCapacidad,
+      capacidad_piso1,
       columnas: parseInt(columnas, 10) || 4,
+      columnas_piso2,
+      pasillo_despues_col,
+      pasillo_despues_col_piso2,
       pisos: parseInt(pisos, 10) || 1,
       celdasBloqueadas: Array.isArray(celdasBloqueadas) ? celdasBloqueadas : [],
-      celdasBano: Array.isArray(celdasBano) ? celdasBano : []
+      celdasBano: Array.isArray(celdasBano) ? celdasBano : [],
+      asientosVip,
+      asientosGrandes,
+      asientosPersonalizados
     });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
+
+  const finalCapacidad = estructura.capacidad_total;
+  const finalTieneBano = Array.isArray(estructura.celdasBano) && estructura.celdasBano.length > 0
+    ? true
+    : tieneBano;
 
   const client = await db.pool.connect();
 
@@ -778,8 +824,6 @@ exports.crearBus = async (req, res) => {
       return res.status(404).json({ error: 'La cooperativa indicada no existe.' });
     }
 
-    await client.query('ALTER TABLE buses DROP CONSTRAINT IF EXISTS buses_capacidad_check');
-
     const busRes = await client.query(
       `INSERT INTO buses
          (cooperativa_id, numero_disco, placa, capacidad, tiene_bano_posterior, estado,
@@ -790,8 +834,8 @@ exports.crearBus = async (req, res) => {
         targetCoopId,
         discoNum,
         placa.trim().toUpperCase(),
-        numCapacidad,
-        tieneBano,
+        finalCapacidad,
+        finalTieneBano,
         estadoLimpio,
         cleanOptionalText(marca_chasis) || null,
         cleanOptionalText(carroceria) || null,
@@ -814,9 +858,23 @@ exports.crearBus = async (req, res) => {
     const nuevoBus = await fetchBusWithCoop(client, busId);
     await client.query('COMMIT');
 
+    const hasCustomLayout = Boolean(
+      plantilla_id ||
+      plantilla_nombre ||
+      Number(pisos) === 2 ||
+      (Array.isArray(celdasBano) && celdasBano.length > 0) ||
+      (Array.isArray(celdasBloqueadas) && celdasBloqueadas.length > 0) ||
+      (Array.isArray(asientosPersonalizados) && asientosPersonalizados.length > 0) ||
+      (Array.isArray(asientosVip) && asientosVip.length > 0) ||
+      Number(columnas) !== 4
+    );
+    const savedLayout = hasCustomLayout
+      ? busLayoutStore.saveBusLayout(busId, estructura, { plantilla_id, plantilla_nombre })
+      : null;
+
     res.status(201).json({
-      mensaje: `Bus #${nuevoBus.numero_disco} registrado con éxito y sus ${numCapacidad} asientos fueron generados con estructura personalizada.`,
-      bus: nuevoBus,
+      mensaje: `Bus #${nuevoBus.numero_disco} registrado con éxito y sus ${finalCapacidad} asientos fueron generados con estructura personalizada.`,
+      bus: savedLayout ? { ...nuevoBus, layout: savedLayout } : nuevoBus,
       estructura_generada: estructura,
       total_asientos_generados: estructura.asientos.length
     });
@@ -829,6 +887,83 @@ exports.crearBus = async (req, res) => {
     );
   } finally {
     client.release();
+  }
+};
+
+// CRUD de plantillas reutilizables de estructuras de buses (BUS-11..BUS-19)
+exports.getPlantillas = (req, res) => {
+  try {
+    const isSuper = req.user?.rol === 'SUPERADMIN';
+    const templates = busLayoutStore.listTemplates(req.user?.cooperativa_id, isSuper);
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.crearPlantilla = (req, res) => {
+  const body = req.body || {};
+  if (!body.nombre || typeof body.nombre !== 'string' || !body.nombre.trim()) {
+    return res.status(400).json({ error: 'El nombre de la plantilla es obligatorio.' });
+  }
+  try {
+    const preview = generarEstructuraCompensada(body);
+    const saved = busLayoutStore.createTemplate(
+      {
+        ...body,
+        capacidad: preview.capacidad_total,
+        capacidad_piso1: preview.capacidad_piso1,
+        pisos: preview.pisos,
+        columnas: preview.columnas,
+        columnas_piso2: preview.columnas_piso2,
+        pasillo_despues_col: preview.pasillo_despues_col,
+        pasillo_despues_col_piso2: preview.pasillo_despues_col_piso2,
+        celdasBano: preview.celdasBano,
+        celdasBloqueadas: preview.celdasBloqueadas
+      },
+      req.user?.rol === 'ADMIN_COOP' ? req.user.cooperativa_id : (body.cooperativa_id || null)
+    );
+    res.status(201).json({ mensaje: 'Plantilla guardada exitosamente.', plantilla: saved, estructura: preview });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+exports.actualizarPlantilla = (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  try {
+    const preview = generarEstructuraCompensada(body);
+    const updated = busLayoutStore.updateTemplate(
+      id,
+      {
+        ...body,
+        capacidad: preview.capacidad_total,
+        capacidad_piso1: preview.capacidad_piso1,
+        pisos: preview.pisos,
+        columnas: preview.columnas,
+        columnas_piso2: preview.columnas_piso2,
+        pasillo_despues_col: preview.pasillo_despues_col,
+        pasillo_despues_col_piso2: preview.pasillo_despues_col_piso2,
+        celdasBano: preview.celdasBano,
+        celdasBloqueadas: preview.celdasBloqueadas
+      },
+      req.user
+    );
+    if (!updated) return res.status(404).json({ error: 'Plantilla personalizada no encontrada (las plantillas base del sistema pueden duplicarse como nuevas).' });
+    res.json({ mensaje: 'Plantilla actualizada exitosamente.', plantilla: updated, estructura: preview });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message });
+  }
+};
+
+exports.eliminarPlantilla = (req, res) => {
+  try {
+    const deleted = busLayoutStore.deleteTemplate(req.params.id, req.user);
+    if (!deleted) return res.status(404).json({ error: 'Plantilla personalizada no encontrada.' });
+    res.json({ mensaje: 'Plantilla eliminada exitosamente.' });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message });
   }
 };
 
@@ -847,9 +982,10 @@ exports.asignarPlantillaABus = async (req, res) => {
   const busId = parsePositiveInt(req.params.id);
   if (!busId) return res.status(400).json({ error: 'ID de bus inválido.' });
 
+  const body = req.body || {};
   let estructura;
   try {
-    estructura = generarEstructuraCompensada(req.body || {});
+    estructura = generarEstructuraCompensada(body);
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
@@ -872,10 +1008,9 @@ exports.asignarPlantillaABus = async (req, res) => {
       return res.status(409).json({ error: 'No se puede reemplazar la estructura porque la unidad ya tiene boletos o reservas registradas.' });
     }
 
-    await client.query('ALTER TABLE buses DROP CONSTRAINT IF EXISTS buses_capacidad_check');
     await client.query(
       'UPDATE buses SET capacidad = $1, tiene_bano_posterior = $2 WHERE id = $3',
-      [estructura.capacidad_total, (req.body.celdasBano || []).length > 0, busId]
+      [estructura.capacidad_total, (estructura.celdasBano || []).length > 0, busId]
     );
     await client.query('DELETE FROM asientos WHERE bus_id = $1', [busId]);
 
@@ -888,9 +1023,15 @@ exports.asignarPlantillaABus = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    const layout = busLayoutStore.saveBusLayout(busId, estructura, {
+      plantilla_id: body.plantilla_id || null,
+      plantilla_nombre: body.plantilla_nombre || null
+    });
+
     res.json({
       mensaje: `Estructura de ${estructura.capacidad_total} asientos asignada exitosamente al bus #${busId}.`,
-      estructura
+      estructura,
+      layout
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -906,13 +1047,20 @@ exports.asignarPlantillaABus = async (req, res) => {
 
 exports.getFrecuencias = async (req, res) => {
   try {
+    const params = [];
+    let whereClause = '';
+    if (req.user?.rol === 'ADMIN_COOP') {
+      whereClause = 'WHERE f.cooperativa_id = $1';
+      params.push(req.user.cooperativa_id);
+    }
     const query = `
       SELECT f.*, c.nombre AS cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM frecuencias f
       JOIN cooperativas c ON f.cooperativa_id = c.id
+      ${whereClause}
       ORDER BY f.es_destacada DESC, f.id ASC
     `;
-    const result = await db.query(query);
+    const result = await db.query(query, params);
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -932,10 +1080,18 @@ exports.crearFrecuencia = async (req, res) => {
     es_destacada = false,
     patrocinio_inicio = null,
     patrocinio_fin = null
-  } = req.body;
+  } = req.body || {};
 
-  if (!cooperativa_id || !resolucion_ant || !origen || !destino || !hora_salida || !precio_base) {
+  const targetCoopId = req.user?.rol === 'ADMIN_COOP'
+    ? req.user.cooperativa_id
+    : parsePositiveInt(cooperativa_id);
+
+  if (!targetCoopId || !resolucion_ant || !origen || !destino || !hora_salida || !precio_base) {
     return res.status(400).json({ error: 'Todos los campos de la frecuencia ANT son obligatorios' });
+  }
+  const precioNum = parseFloat(precio_base);
+  if (!Number.isFinite(precioNum) || precioNum <= 0) {
+    return res.status(400).json({ error: 'La tarifa base debe ser mayor a cero.' });
   }
 
   let paradasArray = [];
@@ -952,12 +1108,12 @@ exports.crearFrecuencia = async (req, res) => {
       RETURNING *
     `;
     const result = await db.query(query, [
-      cooperativa_id,
+      targetCoopId,
       resolucion_ant.trim(),
       origen.trim(),
       destino.trim(),
       hora_salida,
-      parseFloat(precio_base),
+      precioNum,
       tipo_servicio,
       paradasArray,
       Boolean(es_destacada),
@@ -1009,7 +1165,7 @@ exports.actualizarBus = async (req, res) => {
       return res.status(403).json({ error: 'No tienes permiso para editar unidades de otra cooperativa.' });
     }
     if (req.user?.rol === 'ADMIN_COOP' && body.cooperativa_id !== undefined && body.cooperativa_id !== null
-        && Number(body.cooperativa_id) !== Number(existing.cooperativa_id)) {
+      && Number(body.cooperativa_id) !== Number(existing.cooperativa_id)) {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'No puedes transferir una unidad a otra cooperativa.' });
     }
@@ -1062,17 +1218,33 @@ exports.actualizarBus = async (req, res) => {
       foto_url: existing.foto_url || null
     });
 
-    // Solo si cambia capacidad validamos ausencia de boletos/reservas; en edición técnica se preservan asientos existentes.
-    if (nextCapacidad !== existing.capacidad) {
+    const estructuraPayload = body.estructura_personalizada || (
+      body.pisos !== undefined ||
+        body.columnas !== undefined ||
+        body.celdasBano !== undefined ||
+        body.celdasBloqueadas !== undefined ||
+        body.asientosPersonalizados !== undefined
+        ? body
+        : null
+    );
+
+    let estructuraGuardada = null;
+    // Si cambia capacidad o se envía una estructura personalizada, validamos ausencia de reservas y regeneramos asientos.
+    if (nextCapacidad !== existing.capacidad || estructuraPayload) {
       if (await busHasReservations(client, busId)) {
         await client.query('ROLLBACK');
         return res.status(409).json({
-          error: 'No se puede cambiar la capacidad porque esta unidad ya tiene reservas o boletos emitidos.'
+          error: 'No se puede cambiar la capacidad o estructura porque esta unidad ya tiene reservas o boletos emitidos.'
         });
       }
-      const nuevaEstructura = generarEstructuraCompensada({ capacidad: nextCapacidad });
+      estructuraGuardada = generarEstructuraCompensada(
+        estructuraPayload
+          ? { ...estructuraPayload, capacidad: nextCapacidad }
+          : { capacidad: nextCapacidad }
+      );
+      nextCapacidad = estructuraGuardada.capacidad_total;
       await client.query('DELETE FROM asientos WHERE bus_id = $1', [busId]);
-      for (const a of nuevaEstructura.asientos) {
+      for (const a of estructuraGuardada.asientos) {
         await client.query(
           `INSERT INTO asientos (bus_id, numero_asiento, fila, columna, categoria)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -1098,7 +1270,7 @@ exports.actualizarBus = async (req, res) => {
         nextDisco,
         nextPlaca,
         nextCapacidad,
-        nextBano,
+        estructuraGuardada && (estructuraGuardada.celdasBano || []).length > 0 ? true : nextBano,
         nextEstado,
         nextChasis,
         nextCarroceria,
@@ -1112,7 +1284,21 @@ exports.actualizarBus = async (req, res) => {
     const updatedBus = await fetchBusWithCoop(client, busId);
     await client.query('COMMIT');
 
-    res.json({ mensaje: 'Bus actualizado con éxito', bus: updatedBus });
+    let savedLayout = busLayoutStore.getBusLayout(busId);
+    if (estructuraGuardada && estructuraPayload) {
+      savedLayout = busLayoutStore.saveBusLayout(busId, estructuraGuardada, {
+        plantilla_id: estructuraPayload.plantilla_id || null,
+        plantilla_nombre: estructuraPayload.plantilla_nombre || null
+      });
+    } else if (estructuraGuardada) {
+      busLayoutStore.deleteBusLayout(busId);
+      savedLayout = null;
+    }
+
+    res.json({
+      mensaje: 'Bus actualizado con éxito',
+      bus: savedLayout ? { ...updatedBus, layout: savedLayout } : updatedBus
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     return handlePgError(
@@ -1147,6 +1333,7 @@ exports.eliminarBus = async (req, res) => {
     await client.query('DELETE FROM asientos WHERE bus_id = $1', [busId]);
     await client.query('DELETE FROM buses WHERE id = $1', [busId]);
     await client.query('COMMIT');
+    busLayoutStore.deleteBusLayout(busId);
 
     res.json({ mensaje: 'Bus y asientos eliminados con éxito' });
   } catch (error) {
@@ -1159,7 +1346,9 @@ exports.eliminarBus = async (req, res) => {
 };
 
 exports.actualizarFrecuencia = async (req, res) => {
-  const { id } = req.params;
+  const freqId = parsePositiveInt(req.params.id);
+  if (!freqId) return res.status(400).json({ error: 'ID de frecuencia inválido.' });
+
   const {
     cooperativa_id,
     resolucion_ant,
@@ -1172,7 +1361,7 @@ exports.actualizarFrecuencia = async (req, res) => {
     es_destacada,
     patrocinio_inicio,
     patrocinio_fin
-  } = req.body;
+  } = req.body || {};
 
   let paradasArray = undefined;
   if (paradas_intermedias !== undefined) {
@@ -1184,6 +1373,16 @@ exports.actualizarFrecuencia = async (req, res) => {
   }
 
   try {
+    const existingRes = await db.query('SELECT id, cooperativa_id FROM frecuencias WHERE id = $1', [freqId]);
+    if (existingRes.rowCount === 0) return res.status(404).json({ error: 'Frecuencia no encontrada' });
+    if (req.user?.rol === 'ADMIN_COOP' && Number(existingRes.rows[0].cooperativa_id) !== Number(req.user.cooperativa_id)) {
+      return res.status(403).json({ error: 'No tienes permiso para editar frecuencias de otra cooperativa.' });
+    }
+
+    const updateInicio = patrocinio_inicio !== undefined;
+    const updateFin = patrocinio_fin !== undefined;
+    const targetCoopId = req.user?.rol === 'ADMIN_COOP' ? req.user.cooperativa_id : (cooperativa_id || null);
+
     const result = await db.query(
       `UPDATE frecuencias 
        SET cooperativa_id = COALESCE($1, cooperativa_id),
@@ -1195,11 +1394,11 @@ exports.actualizarFrecuencia = async (req, res) => {
            tipo_servicio = COALESCE($7, tipo_servicio),
            paradas_intermedias = COALESCE($8, paradas_intermedias),
            es_destacada = COALESCE($9, es_destacada),
-           patrocinio_inicio = CASE WHEN $10::text IS NOT NULL THEN $10::timestamp ELSE patrocinio_inicio END,
-           patrocinio_fin = CASE WHEN $11::text IS NOT NULL THEN $11::timestamp ELSE patrocinio_fin END
-       WHERE id = $12 RETURNING *`,
+           patrocinio_inicio = CASE WHEN $10::boolean THEN NULLIF($11::text, '')::timestamp ELSE patrocinio_inicio END,
+           patrocinio_fin = CASE WHEN $12::boolean THEN NULLIF($13::text, '')::timestamp ELSE patrocinio_fin END
+       WHERE id = $14 RETURNING *`,
       [
-        cooperativa_id || null,
+        targetCoopId,
         resolucion_ant || null,
         origen || null,
         destino || null,
@@ -1208,9 +1407,11 @@ exports.actualizarFrecuencia = async (req, res) => {
         tipo_servicio || null,
         paradasArray,
         es_destacada !== undefined ? Boolean(es_destacada) : null,
-        patrocinio_inicio !== undefined ? (patrocinio_inicio || null) : null,
-        patrocinio_fin !== undefined ? (patrocinio_fin || null) : null,
-        id
+        updateInicio,
+        updateInicio ? (patrocinio_inicio || '') : '',
+        updateFin,
+        updateFin ? (patrocinio_fin || '') : '',
+        freqId
       ]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Frecuencia no encontrada' });
@@ -1222,9 +1423,15 @@ exports.actualizarFrecuencia = async (req, res) => {
 };
 
 exports.eliminarFrecuencia = async (req, res) => {
-  const { id } = req.params;
+  const freqId = parsePositiveInt(req.params.id);
+  if (!freqId) return res.status(400).json({ error: 'ID de frecuencia inválido.' });
   try {
-    const result = await db.query('DELETE FROM frecuencias WHERE id = $1 RETURNING id', [id]);
+    const existingRes = await db.query('SELECT id, cooperativa_id FROM frecuencias WHERE id = $1', [freqId]);
+    if (existingRes.rowCount === 0) return res.status(404).json({ error: 'Frecuencia no encontrada' });
+    if (req.user?.rol === 'ADMIN_COOP' && Number(existingRes.rows[0].cooperativa_id) !== Number(req.user.cooperativa_id)) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar frecuencias de otra cooperativa.' });
+    }
+    const result = await db.query('DELETE FROM frecuencias WHERE id = $1 RETURNING id', [freqId]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Frecuencia no encontrada' });
     res.json({ mensaje: 'Frecuencia eliminada con éxito' });
   } catch (error) {

@@ -77,6 +77,23 @@ export default function VentaVentanilla({ usuario }) {
     setPassengers(current => current.map((passenger, i) => (
       i === index ? { ...passenger, [field]: value } : passenger
     )));
+    if (field === 'cedula') {
+      const clean = String(value || '').replace(/\D/g, '');
+      if (clean.length === 10) {
+        officeRequest(usuario, `/oficina/pasajero/${encodeURIComponent(clean)}`)
+          .then(data => {
+            const p = data?.pasajero;
+            if (!p) return;
+            setPassengers(current => current.map((row, i) => (
+              i === index && row.cedula.trim() === clean
+                ? { ...row, nombre: p.nombre || row.nombre }
+                : row
+            )));
+            if (p.email) setEmail(prev => prev || p.email);
+          })
+          .catch(() => {});
+      }
+    }
   }
 
   async function submit(event) {

@@ -139,7 +139,12 @@ export default function App() {
     setReserved(false);
     setCode('');
     setPage('search');
-    window.location.hash = 'buscar';
+    if (window.location.search || window.location.pathname !== '/') {
+      const keepDemo = isDemo ? '?demo=1' : '';
+      window.history.replaceState(null, '', `/${keepDemo}#buscar`);
+    } else {
+      window.location.hash = 'buscar';
+    }
     window.scrollTo(0, 0);
   };
 
@@ -176,6 +181,11 @@ export default function App() {
 
   const goChofer = () => {
     setMenuOpen(false);
+    if (!canAccessDriver(usuario)) {
+      goLogin('Acceso restringido: Se requieren credenciales de Chofer o Administrador');
+      return;
+    }
+    setAuthError('');
     setPage('chofer');
     window.location.hash = 'chofer';
     window.scrollTo(0, 0);
@@ -234,7 +244,7 @@ export default function App() {
         }
         setAuthError('');
         setPage('oficina');
-      } else if (hash === '#boleto' || getUrlCode()) {
+      } else if (hash === '#boleto' || (hash !== '#buscar' && getUrlCode())) {
         const directCode = getUrlCode();
         if (directCode) setCode(directCode);
         setPage('ticket');

@@ -4,14 +4,19 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
 const bookingController = require('./controllers/bookingController');
 // Webhook Stripe requiere cuerpo crudo (raw JSON) antes del parser JSON global.
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), bookingController.procesarWebhookStripe);
 app.use(express.json());
 
-// Servir la carpeta de comprobantes de forma estática
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Servir la carpeta de comprobantes de forma estática con cabecera segura
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
+}));
 
 // Rutas
 const catalogRoutes = require('./routes/catalogRoutes');

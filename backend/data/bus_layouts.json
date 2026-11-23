@@ -1,0 +1,181 @@
+{
+  "customTemplates": [],
+  "busLayouts": {
+    "18": {
+      "plantilla_id": "tpl-doble-piso-56",
+      "plantilla_nombre": "Doble Piso 56 (Piso 1 Salón VIP Grande + Piso 2 Panorámico)",
+      "pisos": 1,
+      "capacidad_total": 20,
+      "capacidad_piso1": 20,
+      "columnas": 4,
+      "columnas_piso2": 4,
+      "pasillo_despues_col": 2,
+      "pasillo_despues_col_piso2": 2,
+      "celdasBano": [
+        {
+          "piso": 1,
+          "fila": 6,
+          "columna": 3,
+          "tipo": "BANO"
+        }
+      ],
+      "celdasBloqueadas": [
+        {
+          "piso": 1,
+          "fila": 1,
+          "columna": 3,
+          "tipo": "PUERTA"
+        },
+        {
+          "piso": 1,
+          "fila": 5,
+          "columna": 3,
+          "tipo": "ESCALERA"
+        }
+      ],
+      "asientosMeta": {
+        "1": {
+          "piso": 1,
+          "fila_piso": 1,
+          "columna": 1,
+          "categoria": "VIP",
+          "tamano": "GRANDE"
+        },
+        "2": {
+          "piso": 1,
+          "fila_piso": 1,
+          "columna": 2,
+          "categoria": "VIP",
+          "tamano": "GRANDE"
+        },
+        "3": {
+          "piso": 1,
+          "fila_piso": 1,
+          "columna": 4,
+          "categoria": "VIP",
+          "tamano": "GRANDE"
+        },
+        "4": {
+          "piso": 1,
+          "fila_piso": 2,
+          "columna": 1,
+          "categoria": "VIP",
+          "tamano": "GRANDE"
+        },
+        "5": {
+          "piso": 1,
+          "fila_piso": 2,
+          "columna": 2,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "6": {
+          "piso": 1,
+          "fila_piso": 2,
+          "columna": 3,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "7": {
+          "piso": 1,
+          "fila_piso": 2,
+          "columna": 4,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "8": {
+          "piso": 1,
+          "fila_piso": 3,
+          "columna": 1,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "9": {
+          "piso": 1,
+          "fila_piso": 3,
+          "columna": 2,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "10": {
+          "piso": 1,
+          "fila_piso": 3,
+          "columna": 3,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "11": {
+          "piso": 1,
+          "fila_piso": 3,
+          "columna": 4,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "12": {
+          "piso": 1,
+          "fila_piso": 4,
+          "columna": 1,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "13": {
+          "piso": 1,
+          "fila_piso": 4,
+          "columna": 2,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "14": {
+          "piso": 1,
+          "fila_piso": 4,
+          "columna": 3,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "15": {
+          "piso": 1,
+          "fila_piso": 4,
+          "columna": 4,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "16": {
+          "piso": 1,
+          "fila_piso": 5,
+          "columna": 1,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "17": {
+          "piso": 1,
+          "fila_piso": 5,
+          "columna": 2,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "18": {
+          "piso": 1,
+          "fila_piso": 5,
+          "columna": 4,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "19": {
+          "piso": 1,
+          "fila_piso": 6,
+          "columna": 1,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        },
+        "20": {
+          "piso": 1,
+          "fila_piso": 6,
+          "columna": 2,
+          "categoria": "NORMAL",
+          "tamano": "NORMAL"
+        }
+      },
+      "actualizado_en": "2026-11-23T20:31:12.231Z"
+    }
+  }
+}
