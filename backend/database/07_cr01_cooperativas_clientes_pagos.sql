@@ -106,4 +106,17 @@ CREATE INDEX IF NOT EXISTS pagos_tarjeta_webhook_idx
   ON pagos_tarjeta(webhook_event_id)
   WHERE webhook_event_id IS NOT NULL;
 
+-- Índices aditivos de rendimiento para disponibilidad de viajes y asientos.
+CREATE INDEX IF NOT EXISTS idx_programacion_viajes_fecha_estado
+  ON programacion_viajes (fecha_viaje, estado);
+
+CREATE INDEX IF NOT EXISTS idx_asientos_bus_activo
+  ON asientos (bus_id, activo);
+
+CREATE INDEX IF NOT EXISTS idx_reservas_programacion_estado
+  ON reservas (programacion_id, estado);
+
+CREATE INDEX IF NOT EXISTS idx_detalle_boletos_asiento_reserva
+  ON detalle_boletos (asiento_id, reserva_id);
+
 COMMIT;

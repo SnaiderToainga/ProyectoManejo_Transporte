@@ -63,9 +63,11 @@ test('CR-06: combina sugerencias, pasajeros y cuatro filtros y conserva la compr
   await page.getByLabel('Pasajeros', { exact: true }).fill('2');
   await page.getByLabel('Cooperativa', { exact: true }).selectOption('Cooperativa A');
   await page.getByLabel('Tipo de asiento', { exact: true }).selectOption('VIP');
+  await page.getByLabel('Tipo de viaje', { exact: true }).selectOption('PARADAS');
+  await expect(page.getByLabel('Marca de chasis', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: /Filtros avanzados/ }).click();
   await page.getByLabel('Marca de chasis', { exact: true }).selectOption('Mercedes-Benz');
   await page.getByLabel('Carrocería', { exact: true }).selectOption('Marcopolo');
-  await page.getByLabel('Tipo de viaje', { exact: true }).selectOption('PARADAS');
   await page.getByLabel('Desde', { exact: true }).fill('06:00');
   await page.getByLabel('Hasta', { exact: true }).fill('08:00');
   await search(page);
@@ -97,6 +99,7 @@ test('CR-06: categoría exige plazas suficientes y limpiar filtros restablece la
   await expect(page.getByLabel('Pasajeros', { exact: true })).toHaveValue('1');
   await expect(page.getByRole('button', { name: 'Elegir asientos' })).toHaveCount(2);
   await page.getByLabel('Tipo de viaje', { exact: true }).selectOption('DIRECTO');
+  await page.getByRole('button', { name: /Filtros avanzados/ }).click();
   await page.getByLabel('Marca de chasis', { exact: true }).selectOption('Hino');
   await page.getByLabel('Carrocería', { exact: true }).selectOption('Cepeda');
   await search(page);
@@ -107,6 +110,8 @@ test('CR-06: categoría exige plazas suficientes y limpiar filtros restablece la
 test('CR-06: sugiere cantones con tildes aunque no haya viajes en la fecha', async ({ page }) => {
   await mockCatalog(page, { empty: true }); await page.goto('/');
   await expect(page.getByText('No hay viajes con estos filtros')).toBeVisible();
+  await expect(page.getByText(/fechas cercanas como mañana/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Consultar mañana', exact: true })).toBeVisible();
   const origin = page.getByRole('combobox', { name: 'Origen', exact: true });
   await origin.fill('banos');
   await expect(page.getByRole('option', { name: 'Baños', exact: true })).toBeVisible();

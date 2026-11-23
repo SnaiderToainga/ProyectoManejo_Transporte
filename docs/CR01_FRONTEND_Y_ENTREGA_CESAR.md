@@ -133,3 +133,52 @@ No se reescriben las plantillas de CR-09 ni la lógica de descuentos, tarifas pr
 4. Integrar y verificar ambos trabajos con servicios reales en un entorno acordado, registrar las pruebas de backend y de integración y completar las evidencias faltantes.
 5. Sonia abre el único PR hacia `main`, identifica a ambos autores y solicita revisiones de Joel y Snaider. El informe del ticket debe distinguir lo probado de lo pendiente.
 6. Después del merge autorizado y de la verificación de despliegue: tag anotado `v1.9.0` en el commit oficial y cierre por CAB/SCM. Conservar la rama remota.
+
+---
+
+## Integración Backend, Pulido UX (PR #33) y Cierre ITIL — César (`@Steven9tp`)
+
+Integración conjunta completada sobre `feature/cr-01-ux-wizard-cooperativa` para el Pull Request **#33** hacia `main` (revisores designados: `@SnaiderToainga` y `@joel427`).
+
+### 1. Backend y contratos completados
+
+- **Cooperativas y RBAC (`COOP-04`, `COOP-10` a `COOP-23`):** `POST /api/admin/cooperativas` ejecuta transacción atómica creando cooperativa y gerente `ADMIN_COOP` sin devolver contraseñas ni hashes; `PUT /api/admin/cooperativas/:id` actualiza campos institucionales/marca preservando credenciales y roles; `verifyCooperativaOwnership` valida sesión firmada Bearer y rol en servidor sin confiar en cabeceras manipulables.
+- **Unidades, ficha técnica y asientos (`BUS-01` a `BUS-10`, `VENT-15`, `VENT-16`):** `POST`/`PUT /api/admin/buses` soporta capacidad numérica `1..100`, marcas de chasis/carrocería, socio propietario y galería de fotos con validación URL segura (`validarUrlImagenSegura`); `GET /api/admin/buses/:id/asientos` consulta la estructura en solo lectura; las ediciones de metadatos preservan los asientos existentes y los cambios incompatibles de capacidad devuelven `409 Conflict` cuando existen reservas.
+- **Cuentas personales de cliente (`VENT-07` a `VENT-09`, `VENT-19`, `VENT-20`):** `POST /api/clientes/registro`, `POST /api/clientes/sesion`, `GET /api/clientes/me` y `GET /api/clientes/por-cedula/:cedula` con tokens HMAC aislados (`cliente-uta:`), privacidad estricta de cédulas limitada a acompañantes de la propia cuenta y compatibilidad total con compra visitante y acceso por Magic Link en `GET /api/mis-compras`.
+- **Pasarela Stripe Sandbox USD y comprobantes:** `POST /api/reservas/:codigo/pago-tarjeta` calcula el importe desde base de datos, exige `Idempotency-Key` en servidor, valida dominio permitido (`checkout.stripe.com`) y bloquea claves `sk_live_` por defecto (`ALLOW_LIVE_PAYMENTS`); `POST /api/webhooks/stripe` verifica firma HMAC sobre cuerpo raw y `GET /api/reservas/:codigo` realiza conciliación servidor-a-servidor, evitando doble liquidación entre tarjeta y comprobantes (`TRANSFERENCIA` / `DEPOSITO`).
+
+### 2. Refinamiento UX aplicado previa aprobación del PR #33
+
+- **Panel de pagos (`frontend/src/pages/Client/Checkout.jsx` y `styles.css`):** diseño encapsulado tipo acordeón para Transferencia, Depósito y Tarjeta Stripe Sandbox manteniendo intactos contratos y etiquetas accesibles.
+- **Unificación de navegación de cliente (`App.jsx` y `CustomerAccount.jsx`):** siguiendo la observación UX de `@SnaiderToainga` en PR #33, la barra pública se simplifica a `[ Buscar viaje ] [ Mi boleto ] [ Mi cuenta ] [ Administración ]`, mostrando `Hola, [Nombre]` cuando existe sesión activa de cliente (`customerToken`) y manteniendo el acceso de visitantes al historial por correo (`Consultar mis compras por correo`) dentro de **Mi cuenta** y la compatibilidad directa con `#mis-compras?token=...`.
+
+### 3. Verificación reproducible conjunta
+
+- **Backend (PostgreSQL en memoria PGlite):**
+  ```powershell
+  cd backend
+  node --test tests/*.test.js
+  ```
+  Resultado: **52/52 pruebas aprobadas** (`cr01.test.js`, `catalogSearch.test.js`, `officeSecurity.test.js`, `planning.test.js`, `thermalTickets.test.js`).
+- **Frontend unitarias, E2E vigentes y build:**
+  ```powershell
+  cd frontend
+  node --test tests/unit/*.test.js
+  npx playwright test tests/e2e/cr01.spec.js tests/e2e/formatting.spec.js tests/e2e/tripSearch.spec.js --reporter=line
+  npm run build
+  ```
+  Resultado: **35/35 unitarias**, **34/34 Playwright** (`cr01`: 17, `formatting`: 9, `tripSearch`: 8, incluyendo móvil `320px`/`390px`/`768px` y navegación unificada) y **compilación de producción limpia**.
+- **Prueba integrada local con Stripe Sandbox:** creación real de sesión alojada en `checkout.stripe.com`, pago de prueba en Sandbox, conciliación en backend y emisión de boleto con código QR. *(La suite legada `client.spec.js` de v1.0 conserva 7 fallos previos ajenos a CR-01 por exigir ahora correo obligatorio y validación real de cédula CR-03.)*
+
+### 4. Migración, despliegue y plan de reversión (Rollback)
+
+1. **Respaldo previo:** respaldar la base compartida antes de aplicar cambios en producción.
+2. **Migración SQL incremental:** ejecutar únicamente `backend/database/07_cr01_cooperativas_clientes_pagos.sql` (transaccional, aditiva e idempotente; **nunca ejecutar `01_schema.sql`** porque recrea tablas).
+3. **Variables de entorno en producción (`backend/.env.example`):** configurar `FRONTEND_URL`, `SESSION_SECRET`, `CUSTOMER_SESSION_SECRET`, `STRIPE_SECRET_KEY` (Sandbox `sk_test_...`) y opcionalmente `STRIPE_WEBHOOK_SECRET`. Mantener `ALLOW_LIVE_PAYMENTS` desactivado para garantizar modo Sandbox.
+4. **Integración y release SCM:** obtener las **2/2 aprobaciones** (`@SnaiderToainga` y `@joel427`) en el PR #33, fusionar hacia `main` **conservando la rama remota** (`feature/cr-01-ux-wizard-cooperativa`), verificar el entorno desplegado y crear la etiqueta anotada **`v1.9.0`** sobre el commit de merge en `main`.
+5. **Plan de reversión (Rollback):** ante incidentes críticos post-despliegue, suspender temporalmente pagos con tarjeta o revertir el merge de `main` mediante `git revert -m 1 <SHA_MERGE_PR33>` en rama de contingencia revisada. Conservar las tablas y columnas aditivas de la migración 07 para no perder auditoría ni transacciones registradas.
+
+### 5. Estado de Control de Cambios ITIL (Expediente `SCR-EXP-2026-007`)
+
+- **Dictamen técnico / QA previo al merge:** Implementación Frontend + Backend + UX PR #33 completada y verificada en pruebas automatizadas y Stripe Checkout Sandbox local.
+- **Revisión Post-Implementación (PIR) pendiente para cierre definitivo en portal CAB:** tras fusionar PR #33 y desplegar en Render/Vercel con la migración 07 aplicada en Supabase, adjuntar captura de producción verificada (wizard, unidad flexible, cuenta cliente y pago Sandbox conciliado), número de tag `v1.9.0` y confirmación del cierre formal del expediente **SCR-EXP-2026-007**.

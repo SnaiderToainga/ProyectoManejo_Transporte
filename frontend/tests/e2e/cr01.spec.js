@@ -192,7 +192,15 @@ for (const options of [{ cardUrl: 'javascript:alert(1)' }, { missingCard: true }
 });
 
 test('CR-01: depósito envía el método y mantiene validación por oficina sin emitir boleto', async ({ page }) => {
-  const state = await mockApi(page); await openCheckout(page); await reserve(page); await page.getByLabel('Depósito bancario', { exact: true }).check();
+  const state = await mockApi(page); await openCheckout(page); await reserve(page);
+  await expect(page.getByRole('button', { name: 'Enviar comprobante', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Pagar con tarjeta', exact: true })).toHaveCount(0);
+  await page.getByLabel('Depósito bancario', { exact: true }).check();
+  await expect(page.getByText('2207575571', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Banco Guayaquil', exact: true }).click();
+  await expect(page.getByText('0045882190', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Banco Pichincha', exact: true }).click();
+  await expect(page.getByText('2207575571', { exact: true })).toBeVisible();
   await page.getByLabel('Comprobante de pago', { exact: false }).setInputFiles({ name: 'prueba.png', mimeType: 'image/png', buffer: Buffer.from('prueba-aislada') });
   await page.getByRole('button', { name: 'Enviar comprobante', exact: true }).click();
   await expect(page.getByText('Comprobante en revisión', { exact: true })).toBeVisible();
@@ -212,15 +220,25 @@ test('CR-01: wizard y ficha móvil caben en pantalla', async ({ page }, info) =>
 
 test('CR-01: registro de cliente es opcional y cerrar sesión retira acceso al historial', async ({ page }) => {
   const state = await mockApi(page); await page.goto('/#mi-cuenta');
+  const nav = page.getByRole('navigation', { name: 'Principal' });
+  await expect(nav.getByRole('button', { name: 'Mis compras', exact: true })).toHaveCount(0);
+  await expect(nav.getByRole('button', { name: 'Mi cuenta', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Registrarme', exact: true }).click();
   await page.getByLabel('Nombre completo', { exact: true }).fill(customer.nombre); await page.getByLabel('Cédula', { exact: true }).fill(customer.cedula);
   await page.getByLabel('Correo electrónico', { exact: true }).fill(customer.email); await page.getByLabel('Contraseña', { exact: true }).fill('PruebaClave9!');
   await page.getByRole('button', { name: 'Crear mi cuenta', exact: true }).click();
   await expect(page.getByRole('heading', { name: `Hola, ${customer.nombre}` })).toBeVisible();
+  await expect(nav.getByRole('button', { name: 'Hola, Cliente', exact: true })).toBeVisible();
   expect(state.writes[0].path).toBe('/api/clientes/registro');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Menú', exact: true }).click();
+  await expect(nav.getByRole('button', { name: 'Hola, Cliente', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole('button', { name: 'Cerrar sesión de cliente', exact: true }).click();
   expect(await page.evaluate(() => sessionStorage.getItem('transporte_cliente_token'))).toBeNull();
-  await page.getByRole('button', { name: 'Mis compras', exact: true }).click();
+  await expect(nav.getByRole('button', { name: 'Mi cuenta', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Consultar mis compras por correo', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Enviar enlace', exact: true })).toBeVisible(); await expect(page.getByText(/COMPRA-ANTERIOR/)).toHaveCount(0);
 });
 
