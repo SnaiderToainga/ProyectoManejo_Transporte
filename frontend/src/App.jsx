@@ -1,19 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { BusFront, Ticket, Shield, Menu, X } from 'lucide-react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { BusFront, Ticket, Shield, Menu, X, User, LogOut } from 'lucide-react';
 import SearchTrips from './pages/Client/SearchTrips.jsx';
-import SeatSelection from './pages/Client/SeatSelection.jsx';
-import Checkout from './pages/Client/Checkout.jsx';
-import TicketLookup from './pages/Client/TicketLookup.jsx';
-import HistorialCompras from './pages/Client/HistorialCompras.jsx';
-import CustomerAccount from './pages/Client/CustomerAccount.jsx';
-import Login from './pages/Admin/Login.jsx';
-import GestionCooperativas from './pages/Admin/GestionCooperativas.jsx';
-import OfficeDashboard from './pages/Office/OfficeDashboard';
-import ChoferPanel from './pages/Driver/ChoferPanel.jsx';
 import { recalledCode } from './lib/reservation.js';
 import { api, isDemo } from './lib/api.js';
 import { canAccessOffice, canAccessDriver, canAccessAdmin } from './lib/authGuard.js';
 import { loadSelection, saveSelection, selectionKey } from './lib/purchaseFlow.js';
+
+const SeatSelection = lazy(() => import('./pages/Client/SeatSelection.jsx'));
+const Checkout = lazy(() => import('./pages/Client/Checkout.jsx'));
+const TicketLookup = lazy(() => import('./pages/Client/TicketLookup.jsx'));
+const HistorialCompras = lazy(() => import('./pages/Client/HistorialCompras.jsx'));
+const CustomerAccount = lazy(() => import('./pages/Client/CustomerAccount.jsx'));
+const Login = lazy(() => import('./pages/Admin/Login.jsx'));
+const GestionCooperativas = lazy(() => import('./pages/Admin/GestionCooperativas.jsx'));
+const OfficeDashboard = lazy(() => import('./pages/Office/OfficeDashboard'));
+const ChoferPanel = lazy(() => import('./pages/Driver/ChoferPanel.jsx'));
 
 const isHistoryHash = hash => hash === '#mis-compras' || hash.startsWith('#mis-compras?');
 const historyTokenFromHash = () => isHistoryHash(window.location.hash)
@@ -43,9 +44,16 @@ export default function App() {
   const [customerToken, setCustomerToken] = useState(() => { try { return sessionStorage.getItem('transporte_cliente_token') || ''; } catch { return ''; } });
   const [customer, setCustomer] = useState(null);
   const [customerError, setCustomerError] = useState('');
+  const customerFirstName = customerToken && customer?.nombre
+    ? customer.nombre.trim().split(/\s+/)[0]
+    : '';
   const clearCustomer = () => {
     setCustomerToken(''); setHistoryToken(''); setCustomer(null); setCustomerError(''); setCheckoutDraft(null);
     try { sessionStorage.removeItem('transporte_cliente_token'); } catch {}
+  };
+  const handleCustomerSession = (result) => {
+    setCustomerToken(result.token); setCustomer(result.cliente); setCustomerError('');
+    try { sessionStorage.setItem('transporte_cliente_token', result.token); } catch {}
   };
   useEffect(() => {
     if (!customerToken) return;
@@ -285,51 +293,83 @@ export default function App() {
           </button>
 
           <nav id="main-navigation" className={`site-nav flex-wrap ${menuOpen ? 'is-open' : ''}`} aria-label="Principal" onClick={() => setMenuOpen(false)}>
-            {!['admin', 'oficina', 'chofer'].includes(page) ? <>
-            <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
-              Buscar viaje
-            </button>
-            <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
-              Mi boleto
-            </button>
-            <button className={`nav-link ${page === 'mis-compras' ? 'active' : ''}`} onClick={goHistory}>
-              Mis compras
-            </button>
-            <button className={`nav-link ${page === 'mi-cuenta' ? 'active' : ''}`} onClick={goCustomer}>Mi cuenta</button>
-            </> : <button className="nav-link" onClick={goSearch}>Portal de clientes</button>}
-            {usuario && (usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
-              <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
-                Taquilla / Oficina
-              </button>
-            )}
-            {usuario && (usuario.rol === 'CHOFER' || usuario.rol === 'SUPERADMIN') && (
-              <button className={`nav-link ${page === 'chofer' ? 'active' : ''}`} onClick={goChofer} style={{ fontWeight: 600 }}>
-                🚍 Cabina Chofer
-              </button>
-            )}
-           <button
-            className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
-            onClick={() => {
-              if (usuario) {
-                if (page !== 'admin' && (usuario.rol === 'SUPERADMIN' || usuario.rol === 'ADMIN_COOP')) {
-                  goAdmin();
-                } else {
-                  if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
+            {usuario ? (
+              <>
+                <button className={`nav-link ${!['admin', 'oficina', 'chofer', 'login'].includes(page) ? 'active' : ''}`} onClick={goSearch}>
+                  Portal de clientes
+                </button>
+                {(usuario.rol === 'SUPERADMIN' || usuario.rol === 'ADMIN_COOP') && (
+                  <button className={`nav-link ${page === 'admin' ? 'active' : ''}`} onClick={goAdmin}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <Shield size={15} aria-hidden="true" />
+                      {usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : 'Gerencia'}
+                    </span>
+                  </button>
+                )}
+                {(usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
+                  <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
+                    Taquilla / Oficina
+                  </button>
+                )}
+                {(usuario.rol === 'CHOFER' || usuario.rol === 'SUPERADMIN') && (
+                  <button className={`nav-link ${page === 'chofer' ? 'active' : ''}`} onClick={goChofer} style={{ fontWeight: 600 }}>
+                    🚍 Cabina Chofer
+                  </button>
+                )}
+                <button
+                  className="nav-link"
+                  onClick={() => {
                     localStorage.removeItem('transporte_auth');
                     setUsuario(null);
                     goLogin();
-                  }
-                }
-              } else {
-                goLogin();
-              }
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-              <Shield size={15} />
-              {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : usuario.rol === 'ADMIN_COOP' ? 'Gerencia' : 'Cerrar Sesión') : 'Administración'}
-            </span>
-          </button>
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <LogOut size={15} aria-hidden="true" />
+                    Cerrar sesión
+                  </span>
+                </button>
+              </>
+            ) : customerFirstName ? (
+              <>
+                <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
+                  Buscar viaje
+                </button>
+                <button
+                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
+                  onClick={goCustomer}
+                >
+                  <span className="nav-account-label">
+                    <User size={15} aria-hidden="true" />
+                    {`Hola, ${customerFirstName}`}
+                  </span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
+                  Buscar viaje
+                </button>
+                <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
+                  Mi boleto
+                </button>
+                <button
+                  className={`nav-link ${page === 'mi-cuenta' || page === 'mis-compras' ? 'active' : ''}`}
+                  onClick={goCustomer}
+                >
+                  Mi cuenta
+                </button>
+                <button
+                  className={`nav-link ${page === 'login' ? 'active' : ''}`}
+                  onClick={() => goLogin()}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Shield size={15} aria-hidden="true" />
+                    Administración
+                  </span>
+                </button>
+              </>
+            )}
           </nav>
 
           <span className="header-note">
@@ -339,6 +379,7 @@ export default function App() {
       </header>
 
       <main id="contenido" className="shell main-content">
+        <Suspense fallback={<div className="empty-state" role="status">Cargando vista…</div>}>
         {page === 'chofer' ? (
           canAccessDriver(usuario) ? (
             <ChoferPanel
@@ -403,10 +444,7 @@ export default function App() {
         ) : page === 'mi-cuenta' ? (
           <>
             {customerError && <p role="alert" className="inline-error">{customerError}</p>}
-            <CustomerAccount customer={customer} onSession={result => {
-              setCustomerToken(result.token); setCustomer(result.cliente); setCustomerError('');
-              try { sessionStorage.setItem('transporte_cliente_token', result.token); } catch {}
-            }} onLogout={clearCustomer} onHistory={goHistory} onContinue={trip ? resumePurchase : goSearch} />
+            <CustomerAccount customer={customer} onSession={handleCustomerSession} onLogout={clearCustomer} onHistory={goHistory} onTicket={() => goTicket()} onContinue={trip ? resumePurchase : goSearch} />
           </>
         ) : page === 'mis-compras' ? (
           <>
@@ -418,7 +456,7 @@ export default function App() {
           <TicketLookup key={code} initialCode={code} onBack={goSearch} />
         ) : trip && seats.length ? (
           <Checkout key={selectionKey(trip)} trip={trip} seats={seats} draft={checkoutDraft} onDraftChange={setCheckoutDraft}
-            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
+            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
             onReserved={() => { setReserved(true); setSelectedIds([]); setCheckoutDraft(null); }} />
         ) : trip ? (
           <SeatSelection
@@ -454,6 +492,7 @@ export default function App() {
             />
           </>
         )}
+        </Suspense>
       </main>
 
       <footer className="site-footer shell">

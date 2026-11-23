@@ -1,7 +1,8 @@
 // frontend/src/pages/Client/Checkout.jsx
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, ExternalLink, FileUp, Landmark, LockKeyhole, Mail, ReceiptText, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, ExternalLink, FileUp, Landmark, LockKeyhole, Mail, Plus, ReceiptText, ShieldCheck, Sparkles, UserCheck, X } from 'lucide-react';
 import ReservationTimer from '../../components/ReservationTimer.jsx';
+import CustomerAccount from './CustomerAccount.jsx';
 import { api, isDemo } from '../../lib/api.js';
 import { money, shortTime, travelDate } from '../../lib/format.js';
 import { seatPrice, seatCategory } from '../../lib/seats.js';
@@ -10,13 +11,77 @@ import { passengerError, receiptError, validarCedulaEcuador } from '../../lib/va
 import { hostedPaymentUrl } from '../../lib/purchaseFlow.js';
 import { discountedPrice } from '../../lib/ticketDetails.js';
 
+const BANK_PROVIDERS = [
+  {
+    id: 'pichincha',
+    name: 'Banco Pichincha',
+    accountType: 'Cuenta Transaccional',
+    accountNumber: '2207575571',
+    holder: 'Cesar Steven Carrasco Manotoa',
+    idLabel: 'Cédula',
+    idNumber: '0604588871',
+    logoSrc: '/banks/pichincha.svg',
+  },
+  {
+    id: 'guayaquil',
+    name: 'Banco Guayaquil',
+    accountType: 'Cuenta Corriente',
+    accountNumber: '0045882190',
+    holder: '',
+    idLabel: 'RUC',
+    idNumber: '1890012345001',
+    logoSrc: '/banks/guayaquil.svg',
+  },
+  {
+    id: 'pacifico',
+    name: 'Banco del Pacífico',
+    accountType: 'Cuenta de Ahorros',
+    accountNumber: '1055667788',
+    holder: '',
+    idLabel: 'RUC',
+    idNumber: '1890012345001',
+    logoSrc: '/banks/pacifico.png',
+  },
+  {
+    id: 'produbanco',
+    name: 'Produbanco',
+    accountType: 'Cuenta Corriente',
+    accountNumber: '0200514920',
+    holder: '',
+    idLabel: 'RUC',
+    idNumber: '1890012345001',
+    logoSrc: '/banks/produbanco.png',
+  },
+  {
+    id: 'bolivariano',
+    name: 'Banco Bolivariano',
+    accountType: 'Cuenta Corriente',
+    accountNumber: '5005231840',
+    holder: '',
+    idLabel: 'RUC',
+    idNumber: '1890012345001',
+    logoSrc: '/banks/bolivariano.png',
+  },
+  {
+    id: 'internacional',
+    name: 'Banco Internacional',
+    accountType: 'Cuenta Corriente',
+    accountNumber: '4060912345',
+    holder: '',
+    idLabel: 'RUC',
+    idNumber: '1890012345001',
+    logoSrc: '/banks/internacional.png',
+  },
+];
+
 export function PaymentPanel({ reservation, onUpdate, onDone }) {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [bank, setBank] = useState(null);
-  const [method, setMethod] = useState('TRANSFERENCIA');
+  const [selectedBankId, setSelectedBankId] = useState('pichincha');
+  const [method, setMethod] = useState('');
   const [paymentUrl, setPaymentUrl] = useState('');
   const [copied, setCopied] = useState('');
   const sending = useRef(false);
@@ -143,6 +208,9 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
     setMethod(value);
     setError('');
   };
+
+  const selectedBank = BANK_PROVIDERS.find(item => item.id === selectedBankId) || BANK_PROVIDERS[0];
+  const resolvedHolder = selectedBank.holder || bank?.nombre || reservation.cooperativa_nombre || 'Cooperativa de Transporte';
 
   return (
     <div className="payment-panel">
@@ -272,29 +340,76 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
                             <div className="notice">
                               <p>Esta es una demostración. Usa un archivo de prueba y no realices una transferencia.</p>
                             </div>
-                          ) : bank?.banco && bank?.cuenta_bancaria ? (
-                            <dl className="bank-details">
-                              <div><dt>Beneficiario</dt><dd>{bank.nombre}</dd></div>
-                              <div><dt>Banco</dt><dd>{bank.banco}</dd></div>
-                              <div>
-                                <dt>Cuenta</dt>
-                                <dd className="cr01-account-copy">
-                                  <span>{bank.cuenta_bancaria}</span>
-                                  <button
-                                    type="button"
-                                    className="cr01-copy-btn"
-                                    aria-label="Copiar número de cuenta"
-                                    onClick={() => copyText(bank.cuenta_bancaria, 'account')}
-                                  >
-                                    {copied === 'account' ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar</>}
-                                  </button>
-                                </dd>
-                              </div>
-                            </dl>
                           ) : (
-                            <p className="inline-error">
-                              No tenemos los datos bancarios confirmados. Consúltalos directamente con la cooperativa antes de transferir.
-                            </p>
+                            <>
+                              <div className="cr01-bank-selector" role="group" aria-label="Selecciona el banco">
+                                <span className="cr01-bank-selector-label">Selecciona tu banco</span>
+                                <div className="cr01-bank-grid">
+                                  {BANK_PROVIDERS.map(provider => {
+                                    const picked = provider.id === selectedBank.id;
+                                    return (
+                                      <button
+                                        key={provider.id}
+                                        type="button"
+                                        className={`cr01-bank-card ${picked ? 'is-selected' : ''}`}
+                                        aria-label={provider.name}
+                                        title={provider.name}
+                                        aria-pressed={picked}
+                                        onClick={() => setSelectedBankId(provider.id)}
+                                      >
+                                        <img
+                                          src={provider.logoSrc}
+                                          alt={provider.name}
+                                          className="cr01-bank-img"
+                                          loading="lazy"
+                                        />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <dl className="bank-details">
+                                <div><dt>Banco</dt><dd><strong>{selectedBank.name}</strong></dd></div>
+                                <div><dt>Tipo</dt><dd>{selectedBank.accountType}</dd></div>
+                                <div>
+                                  <dt>Cuenta</dt>
+                                  <dd className="cr01-account-copy">
+                                    <span>{selectedBank.accountNumber}</span>
+                                    <button
+                                      type="button"
+                                      className="cr01-copy-btn"
+                                      aria-label="Copiar número de cuenta"
+                                      onClick={() => copyText(selectedBank.accountNumber, 'account')}
+                                    >
+                                      {copied === 'account' ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar</>}
+                                    </button>
+                                  </dd>
+                                </div>
+                                <div><dt>Titular</dt><dd>{resolvedHolder}</dd></div>
+                                <div>
+                                  <dt>{selectedBank.idLabel}</dt>
+                                  <dd className="cr01-account-copy">
+                                    <span>{selectedBank.idNumber}</span>
+                                    <button
+                                      type="button"
+                                      className="cr01-copy-btn"
+                                      aria-label={`Copiar ${selectedBank.idLabel}`}
+                                      onClick={() => copyText(selectedBank.idNumber, 'id')}
+                                    >
+                                      {copied === 'id' ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar</>}
+                                    </button>
+                                  </dd>
+                                </div>
+                                {bank?.nombre && selectedBank.id === 'pichincha' && (
+                                  <div><dt>Cooperativa</dt><dd>{bank.nombre}</dd></div>
+                                )}
+                              </dl>
+
+                              <p className="small-copy">
+                                Realiza tu {method === 'DEPOSITO' ? 'depósito' : 'transferencia'} y adjunta el comprobante para validación en taquilla.
+                              </p>
+                            </>
                           )}
                           <form onSubmit={upload} className="receipt-form">
                             <label className="file-field">
@@ -345,7 +460,7 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
   );
 }
 
-export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraftChange, customer, customerToken, onAccount, onHistory, onReserved }) {
+export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraftChange, customer, customerToken, onAccount, onCustomerSession, onCustomerLogout, onHistory, onReserved }) {
   const [passengers, setPassengers] = useState(() =>
     seats.map(seat => draft?.passengers?.find(passenger => passenger.asiento_id === seat.asiento_id) || ({
       asiento_id: seat.asiento_id,
@@ -357,6 +472,8 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
   const [email, setEmail] = useState(draft?.email || '');
   const [lookupMessages, setLookupMessages] = useState({});
   const [lookingUp, setLookingUp] = useState({});
+  const [accountModal, setAccountModal] = useState(null);
+  const accountDialogRef = useRef(null);
   const lookupControllers = useRef({});
   const automaticLookup = useRef(new Set());
   const [reservation, setReservation] = useState(null);
@@ -364,6 +481,12 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const submitting = useRef(false);
+  useEffect(() => {
+    const dialog = accountDialogRef.current;
+    if (!dialog) return;
+    if (accountModal && !dialog.open) dialog.showModal();
+    if (!accountModal && dialog.open) dialog.close();
+  }, [accountModal]);
   useEffect(() => { onDraftChange?.({ email, passengers }); }, [email, passengers, onDraftChange]);
   useEffect(() => {
     if (!customer) return;
@@ -522,17 +645,47 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
             />
           ) : (
             <form onSubmit={reserve} className="checkout-form">
-              <div className="notice">
-                <p>Puedes completar tus datos guardados por cédula con tu cuenta de cliente, o ingresarlos manualmente como visitante.</p>
-                {onAccount && !customer && <button type="button" className="button secondary" disabled={busy} onClick={onAccount}>Entrar a mi cuenta de cliente</button>}
-                {onHistory && <button type="button" className="button secondary" disabled={busy} onClick={onHistory}>Abrir Mis compras</button>}
-              </div>
+              {customer ? (
+                <div className="cr01-checkout-account is-signed-in">
+                  <UserCheck size={18} aria-hidden="true" />
+                  <span>
+                    Sesión activa: <strong>{customer.nombre}</strong> · Tus datos se completaron automáticamente para el Pasajero 1.
+                  </span>
+                </div>
+              ) : (
+                <div className="cr01-checkout-account">
+                  <div>
+                    <strong>¿Quieres guardar tu historial de boletos?</strong>
+                    <p className="muted">
+                      Inicia sesión o regístrate para autocompletar tus datos y consultar tus compras cuando quieras, o continúa como visitante.
+                    </p>
+                  </div>
+                  <div className="cr01-checkout-account-actions">
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={busy}
+                      onClick={() => (onCustomerSession ? setAccountModal('login') : onAccount?.())}
+                    >
+                      Entrar a mi cuenta de cliente
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={busy}
+                      onClick={() => (onCustomerSession ? setAccountModal('register') : onAccount?.())}
+                    >
+                      Crear cuenta
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Correo de contacto principal */}
-              <fieldset className="passenger-fields" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #1e3a8a' }}>
+              <fieldset className="passenger-fields cr01-email-fieldset">
                 <legend>
                   <Mail size={16} className="inline-icon" /> Correo de notificación
                 </legend>
-                <label>
+                <label className="cr01-span-full">
                   Correo electrónico para recibir los boletos con QR
                   <input
                     type="email"
@@ -584,10 +737,6 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
                       placeholder="10 dígitos"
                     />
                   </label>
-                  <button type="button" className="button secondary" disabled={busy || lookingUp[i]} onClick={() => lookupPassenger(i)}>
-                    {lookingUp[i] ? 'Consultando datos…' : 'Completar por cédula'}
-                  </button>
-                  {lookupMessages[i] && <p role="status" className="small-copy">{lookupMessages[i]}</p>}
                   <label>
                     Tipo de tarifa / descuento legal
                     <select
@@ -595,7 +744,6 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
                       value={passenger.tipo_pasajero || 'NORMAL'}
                       onChange={event => updatePassenger(i, 'tipo_pasajero', event.target.value)}
                       disabled={busy}
-                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', background: '#ffffff' }}
                     >
                       <option value="NORMAL">Tarifa regular (100 %)</option>
                       <option value="TERCERA_EDAD">Tercera edad (50 % de descuento)</option>
@@ -603,8 +751,21 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
                       <option value="DISCAPACIDAD">Persona con discapacidad (50 % de descuento)</option>
                     </select>
                   </label>
+                  <div className="cr01-lookup-cell">
+                    <button type="button" className="button secondary cr01-lookup-btn" disabled={busy || lookingUp[i]} onClick={() => lookupPassenger(i)}>
+                      {lookingUp[i] ? 'Consultando datos…' : 'Completar por cédula'}
+                    </button>
+                    {lookupMessages[i] && <p role="status" className="small-copy">{lookupMessages[i]}</p>}
+                  </div>
                 </fieldset>
               ))}
+
+              <div className="cr01-add-ticket-row">
+                <button type="button" className="button secondary" disabled={busy} onClick={onBack}>
+                  <Plus size={16} aria-hidden="true" /> Añadir otro boleto
+                </button>
+                <span className="small-copy">Tus datos actuales se conservarán al elegir un asiento adicional.</span>
+              </div>
 
               <p className="small-copy">
                 <LockKeyhole size={13} className="inline-icon" /> Descuentos del 50 % aplicados conforme a la normativa ecuatoriana de transporte. Se valida con la cédula al abordar.
@@ -671,6 +832,33 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
           )}
         </aside>
       </div>
+
+      <dialog
+        ref={accountDialogRef}
+        className="cr01-modal"
+        aria-label="Cuenta de cliente"
+        onClose={() => setAccountModal(null)}
+        onCancel={(event) => { event.preventDefault(); setAccountModal(null); }}
+      >
+        <div className="cr01-modal-header">
+          <h2>Mi cuenta de cliente</h2>
+          <button type="button" className="button secondary" aria-label="Cerrar ventana" onClick={() => setAccountModal(null)}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+        {accountModal && (
+          <CustomerAccount
+            key={accountModal}
+            initialRegister={accountModal === 'register'}
+            compact
+            customer={customer}
+            onSession={onCustomerSession}
+            onLogout={onCustomerLogout}
+            onHistory={() => { setAccountModal(null); onHistory?.(); }}
+            onContinue={() => setAccountModal(null)}
+          />
+        )}
+      </dialog>
     </section>
   );
 }

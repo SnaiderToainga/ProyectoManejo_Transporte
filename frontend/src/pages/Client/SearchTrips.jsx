@@ -1,13 +1,20 @@
-import RouteMap from '../../components/RouteMap.jsx';
 import CantonAutocomplete from '../../components/CantonAutocomplete.jsx';
 import BusDetails from '../../components/BusDetails.jsx';
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, BusFront, CalendarDays, Search, SlidersHorizontal, Users } from 'lucide-react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { ArrowRight, BusFront, CalendarDays, ChevronDown, ChevronUp, Search, SlidersHorizontal, Users } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
 import { calculateSegmentPrice, matchesTrip, money, resolveTripSegment, shortTime, today, travelDate } from '../../lib/format.js';
 import { cantonOptions, countAvailableSeats, MAX_PASSENGERS, passengerCount, searchOptions, tripAvailability } from '../../lib/tripSearch.js';
 
+const RouteMap = lazy(() => import('../../components/RouteMap.jsx'));
+
 const initialFilters = () => ({ fecha: today(), origen: '', destino: '', cooperativa: '', desde: '', hasta: '', categoria: '', pasajeros: '1', marca_chasis: '', carroceria: '', tipo_servicio: '' });
+
+function addDays(isoDate, days = 1) {
+  const [y, m, d] = String(isoDate || today()).split('-').map(Number);
+  if (!y || !m || !d) return today();
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
 
 export default function SearchTrips({ onChoose }) {
   const [busDetalle, setBusDetalle] = useState(null);
@@ -21,6 +28,9 @@ export default function SearchTrips({ onChoose }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [validation, setValidation] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const advancedCount = [filters.marca_chasis, filters.carroceria, filters.desde, filters.hasta].filter(Boolean).length;
+  const nextDay = addDays(query.fecha, 1);
   const routes = useMemo(() => [...frequencies, ...catalogTrips], [frequencies, catalogTrips]);
   const origins = useMemo(() => cantonOptions(routes, 'origen'), [routes]);
   const destinations = useMemo(() => cantonOptions(routes, 'destino'), [routes]);
@@ -99,13 +109,27 @@ export default function SearchTrips({ onChoose }) {
       <div className="search-filters"><span className="filter-heading"><SlidersHorizontal size={16} /> Filtrar por</span>
         <label><span className="sr-only">Cooperativa</span><select aria-label="Cooperativa" name="cooperativa" value={filters.cooperativa} onChange={change}><option value="">Todas las cooperativas</option>{operators.map(nombre => <option key={nombre} value={nombre}>{nombre}</option>)}</select></label>
         <label><span className="sr-only">Tipo de asiento</span><select aria-label="Tipo de asiento" name="categoria" value={filters.categoria} onChange={change}><option value="">Cualquier asiento</option><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label>
-        <label><span className="sr-only">Marca de chasis</span><select aria-label="Marca de chasis" name="marca_chasis" value={filters.marca_chasis} onChange={change}><option value="">Cualquier marca de chasis</option>{searchOptions([...chassis.map(marca_chasis => ({ marca_chasis })), { marca_chasis: filters.marca_chasis }], 'marca_chasis').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-        <label><span className="sr-only">Carrocería</span><select aria-label="Carrocería" name="carroceria" value={filters.carroceria} onChange={change}><option value="">Cualquier carrocería</option>{searchOptions([...bodyworks.map(carroceria => ({ carroceria })), { carroceria: filters.carroceria }], 'carroceria').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         <label><span className="sr-only">Tipo de viaje</span><select aria-label="Tipo de viaje" name="tipo_servicio" value={filters.tipo_servicio} onChange={change}><option value="">Todos los tipos de viaje</option><option value="DIRECTO">Directo</option><option value="PARADAS">Con paradas</option></select></label>
-        <label className="time-filter"><span>Desde</span><input type="time" name="desde" value={filters.desde} onChange={change} /></label>
-        <label className="time-filter"><span>Hasta</span><input type="time" name="hasta" value={filters.hasta} onChange={change} /></label>
+        <button
+          type="button"
+          className={`search-advanced-toggle ${showAdvanced ? 'is-open' : ''}`}
+          aria-expanded={showAdvanced}
+          aria-controls="filtros-avanzados"
+          onClick={() => setShowAdvanced(open => !open)}
+        >
+          Filtros avanzados{advancedCount > 0 ? ` (${advancedCount})` : ''}
+          {showAdvanced ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+        </button>
       </div>
-      {!loading && catalogTrips.length > 0 && (!chassis.length || !bodyworks.length) && <p className="search-help">Los filtros de chasis y carrocería muestran únicamente marcas registradas para los viajes de la fecha consultada.</p>}
+      {showAdvanced && (
+        <div id="filtros-avanzados" className="search-filters search-advanced-filters">
+          <label><span className="sr-only">Marca de chasis</span><select aria-label="Marca de chasis" name="marca_chasis" value={filters.marca_chasis} onChange={change}><option value="">Cualquier marca de chasis</option>{searchOptions([...chassis.map(marca_chasis => ({ marca_chasis })), { marca_chasis: filters.marca_chasis }], 'marca_chasis').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label><span className="sr-only">Carrocería</span><select aria-label="Carrocería" name="carroceria" value={filters.carroceria} onChange={change}><option value="">Cualquier carrocería</option>{searchOptions([...bodyworks.map(carroceria => ({ carroceria })), { carroceria: filters.carroceria }], 'carroceria').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label className="time-filter"><span>Desde</span><input type="time" name="desde" value={filters.desde} onChange={change} /></label>
+          <label className="time-filter"><span>Hasta</span><input type="time" name="hasta" value={filters.hasta} onChange={change} /></label>
+        </div>
+      )}
+      {showAdvanced && !loading && catalogTrips.length > 0 && (!chassis.length || !bodyworks.length) && <p className="search-help">Los filtros de chasis y carrocería muestran únicamente marcas registradas para los viajes de la fecha consultada.</p>}
       {validation && <p className="inline-error search-help" role="alert">{validation}</p>}
     </form>
     <section className="results" aria-labelledby="results-heading" aria-busy={loading}>
@@ -113,8 +137,43 @@ export default function SearchTrips({ onChoose }) {
       <p className="sr-only" role="status">{loading ? 'Consultando viajes' : `${trips.length} viajes encontrados`}</p>
       {error ? <div className="notice error" role="alert"><h3>No pudimos mostrar los viajes</h3><p>{error}</p><button className="button secondary" onClick={() => setQuery({ ...query })}>Reintentar</button>{!isDemo && <a className="text-link" href="?demo=1">Explorar una demostración</a>}</div>
         : loading ? <div className="empty-state">Buscando tu próximo destino…</div>
-          : !trips.length ? <div className="empty-state"><BusFront size={32} /><h3>No hay viajes con estos filtros</h3><p>Prueba otra fecha, ruta u horario.</p><button className="button secondary" onClick={() => { const next = initialFilters(); next.fecha = filters.fecha; setFilters(next); setQuery(next); }}>Limpiar filtros</button></div>
-            : <><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /><div className="trip-list">{trips.map(trip => {
+          : !trips.length ? (
+            <div className="empty-state">
+              <BusFront size={32} />
+              <h3>No hay viajes con estos filtros</h3>
+              <p>
+                {catalogTrips.length === 0
+                  ? <>No encontramos salidas programadas para el {travelDate(query.fecha)}. Te sugerimos consultar fechas cercanas como <strong>mañana ({travelDate(nextDay)})</strong>.</>
+                  : <>No hay salidas que coincidan con tus filtros actuales. Puedes limpiar los filtros o consultar fechas cercanas como <strong>mañana ({travelDate(nextDay)})</strong>.</>}
+              </p>
+              <div className="empty-actions">
+                <button
+                  type="button"
+                  className="button primary"
+                  onClick={() => {
+                    const next = { ...filters, fecha: nextDay };
+                    setFilters(next);
+                    setQuery(next);
+                  }}
+                >
+                  Consultar mañana
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => {
+                    const next = initialFilters();
+                    next.fecha = filters.fecha;
+                    setFilters(next);
+                    setQuery(next);
+                  }}
+                >
+                  Limpiar filtros
+                </button>
+              </div>
+            </div>
+          )
+            : <><Suspense fallback={null}><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /></Suspense><div className="trip-list">{trips.map(trip => {
               const seg = resolveTripSegment(trip, query.origen, query.destino);
               const { itinerary, totalSegments } = seg;
               const custom = customSegments[trip.programacion_id];
