@@ -8,22 +8,23 @@ const { requireSession, requireRoles } = require('../services/sessionAccess');
 router.post('/login', adminController.login);
 
 // 2. Cooperativas y branding
-router.get('/cooperativas', adminController.getCooperativas);
-router.post('/cooperativas', adminController.crearCooperativa);
-router.put('/cooperativas/:id', verifyCooperativaOwnership, adminController.actualizarCooperativa);
-router.delete('/cooperativas/:id', verifyCooperativaOwnership, adminController.eliminarCooperativa);
+router.get('/cooperativas', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.getCooperativas);
+router.post('/cooperativas', requireSession, requireRoles('SUPERADMIN'), adminController.crearCooperativa);
+router.put('/cooperativas/:id', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), verifyCooperativaOwnership, adminController.actualizarCooperativa);
+router.delete('/cooperativas/:id', requireSession, requireRoles('SUPERADMIN'), adminController.eliminarCooperativa);
 
 // 3. Usuarios de cooperativa
 router.get('/usuarios', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.getUsuarios);
 router.post('/usuarios', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.crearUsuario);
 
-// 4. Flota de buses y Plantillas Matriciales de Asientos (CR-09)
-router.get('/buses', adminController.getBuses);
-router.post('/buses', adminController.crearBus);
-router.put('/buses/:id', adminController.actualizarBus);
-router.delete('/buses/:id', adminController.eliminarBus);
-router.post('/plantillas/preview', adminController.generarVistaPreviaPlantilla);
-router.post('/buses/:id/plantilla', adminController.asignarPlantillaABus);
+// 4. Flota de buses y Plantillas Matriciales de Asientos (CR-09 / CR-01)
+router.get('/buses', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.getBuses);
+router.get('/buses/:id/asientos', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.getAsientosBus);
+router.post('/buses', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.crearBus);
+router.put('/buses/:id', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.actualizarBus);
+router.delete('/buses/:id', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.eliminarBus);
+router.post('/plantillas/preview', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.generarVistaPreviaPlantilla);
+router.post('/buses/:id/plantilla', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.asignarPlantillaABus);
 
 // 5. Frecuencias oficiales ANT
 router.get('/frecuencias', adminController.getFrecuencias);

@@ -5,9 +5,9 @@ import { api } from '../../lib/api.js';
 import { money, shortTime, travelDate } from '../../lib/format.js';
 import { isAvailable, seatCategory, seatPrice, uniqueSeats } from '../../lib/seats.js';
 
-export default function SeatSelection({ trip, initialCategory = '', onBack, onContinue }) {
+export default function SeatSelection({ trip, initialCategory = '', initialSelectedIds = [], onSelectionChange, onBack, onContinue }) {
   const [seats, setSeats] = useState([]);
-  const [selected, setSelected] = useState([]);
+  const [selected, setSelected] = useState(initialSelectedIds);
   const [category, setCategory] = useState(initialCategory);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +26,7 @@ export default function SeatSelection({ trip, initialCategory = '', onBack, onCo
     return () => controller.abort();
   }, [trip.programacion_id, refresh]);
   useEffect(() => { const id = setInterval(() => setRefresh(value => value + 1), 15000); return () => clearInterval(id); }, []);
+  useEffect(() => { onSelectionChange?.(selected); }, [selected, onSelectionChange]);
   const picked = seats.filter(seat => selected.includes(seat.asiento_id));
   const total = picked.reduce((sum, seat) => sum + (seatPrice(seat, trip) || 0), 0);
   const valid = picked.length > 0 && picked.every(seat => seatPrice(seat, trip) !== null);

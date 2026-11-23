@@ -14,8 +14,8 @@ exports.generarEstructuraCompensada = ({
   celdasBano = []        // ej. ["10-4"]
 }) => {
   const numCapacidad = parseInt(capacidad, 10);
-  if (isNaN(numCapacidad) || numCapacidad < 12 || numCapacidad > 65) {
-    throw new Error('La capacidad del bus debe estar entre 12 y 65 asientos.');
+  if (isNaN(numCapacidad) || numCapacidad < 1 || numCapacidad > 100) {
+    throw new Error('La capacidad del bus debe estar entre 1 y 100 asientos.');
   }
 
   const bloqueadosSet = new Set(celdasBloqueadas);
@@ -27,7 +27,7 @@ exports.generarEstructuraCompensada = ({
 
   // Avanza fila por fila; si encuentra celdas bloqueadas o baños, salta la posición
   // y continúa agregando asientos al final hasta cumplir exactamente numCapacidad
-  while (asientosGenerados.length < numCapacidad && filaActual <= 30) {
+  while (asientosGenerados.length < numCapacidad && filaActual <= 40) {
     for (let col = 1; col <= columnas; col++) {
       if (asientosGenerados.length >= numCapacidad) break;
       const key = `${filaActual}-${col}`;

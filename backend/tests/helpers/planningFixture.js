@@ -33,8 +33,11 @@ async function createFixture() {
   require.cache[require.resolve('../../src/config/db')] = { exports: { query: pool.query, pool } };
   const express = require('express');
   const app = express();
+  const bookingController = require('../../src/controllers/bookingController');
+  app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), bookingController.procesarWebhookStripe);
   app.use(express.json());
   app.use('/api/admin', require('../../src/routes/adminRoutes'));
+  app.use('/api/clientes', require('../../src/routes/customerRoutes'));
   app.use('/api/planificacion', require('../../src/routes/planningRoutes'));
   app.use('/api', require('../../src/routes/catalogRoutes'));
   app.use('/api', require('../../src/routes/officeRoutes'));

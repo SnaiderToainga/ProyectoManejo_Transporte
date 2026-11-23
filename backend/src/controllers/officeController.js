@@ -83,12 +83,26 @@ exports.validarComprobante = async (req, res) => {
 
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-    const lookup = await client.query('SELECT programacion_id FROM reservas WHERE id = $1', [id]);
-    const trip = lookup.rowCount && await lockTrip(client, lookup.rows[0].programacion_id);
+    const lookup = await client.query(
+      `SELECT programacion_id, comprobante_url,
+              to_jsonb(reservas)->>'metodo_pago' AS metodo_pago
+       FROM reservas
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+    const reservaLock = lookup.rows[0];
+    const trip = lookup.rowCount && await lockTrip(client, reservaLock.programacion_id);
     await assertOfficeTrip(client, req, trip);
     if (!trip) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
+    if (aprobar && reservaLock.metodo_pago === 'TARJETA' && !reservaLock.comprobante_url) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Esta reserva corresponde a un pago con tarjeta en pasarela y solo puede confirmarse mediante el proveedor.'
+      });
     }
 
     if (aprobar) {

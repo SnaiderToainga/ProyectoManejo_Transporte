@@ -30,7 +30,15 @@ exports.validarRucEcuatoriano = (ruc) => {
   const clean = ruc.trim();
   if (!/^\d{13}$/.test(clean)) return false;
   if (!clean.endsWith('001')) return false;
-  return exports.validarCedulaEcuatoriana(clean.substring(0, 10));
+
+  const provincia = parseInt(clean.substring(0, 2), 10);
+  if (provincia < 1 || provincia > 24) return false;
+
+  const tercerDigito = parseInt(clean.charAt(2), 10);
+  if (tercerDigito < 6) {
+    return exports.validarCedulaEcuatoriana(clean.substring(0, 10));
+  }
+  return tercerDigito === 6 || tercerDigito === 9;
 };
 
 // 3. Validación de Teléfono Celular ecuatoriano (COOP-03: comienza con 09, 10 dígitos)
@@ -65,4 +73,36 @@ exports.validarPasswordSeguro = (password) => {
   if (!password || typeof password !== 'string') return false;
   const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/;
   return regex.test(password);
+};
+
+// 8. Contraseña Segura con símbolo especial para CR-01 (gerentes y clientes)
+exports.validarPasswordConSimbolo = (password) => {
+  return exports.validarPasswordSeguro(password) && /[^a-z0-9]/i.test(password);
+};
+
+// 9. URL segura para imágenes (HTTPS/HTTP sin credenciales embebidas o ruta local /uploads/...)
+exports.validarUrlImagenSegura = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('//')) return false;
+  try {
+    const parsed = new URL(trimmed, 'https://local.invalid');
+    const isLocalPath = trimmed.startsWith('/') && parsed.origin === 'https://local.invalid';
+    const isRemoteHttp = ['https:', 'http:'].includes(parsed.protocol) && parsed.origin !== 'https://local.invalid';
+    return (isLocalPath || isRemoteHttp) && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+};
+
+// 10. Color hexadecimal (#RRGGBB)
+exports.validarColorHex = (color) => {
+  if (!color || typeof color !== 'string') return false;
+  return /^#[0-9a-f]{6}$/i.test(color.trim());
+};
+
+// 11. Cuenta bancaria numérica (6 a 30 dígitos)
+exports.validarCuentaBancaria = (cuenta) => {
+  if (!cuenta || typeof cuenta !== 'string') return false;
+  return /^\d{6,30}$/.test(cuenta.trim());
 };

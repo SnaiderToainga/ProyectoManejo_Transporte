@@ -44,6 +44,16 @@ exports.getViajesProgramados = async (req, res) => {
              b.numero_disco, b.placa, b.capacidad, b.tiene_bano_posterior,
              NULLIF(BTRIM(to_jsonb(b)->>'marca_chasis'), '') AS marca_chasis,
              NULLIF(BTRIM(to_jsonb(b)->>'carroceria'), '') AS carroceria,
+             NULLIF(BTRIM(to_jsonb(b)->>'socio_nombre'), '') AS socio_nombre,
+             NULLIF(BTRIM(to_jsonb(b)->>'foto_url'), '') AS foto_url,
+             COALESCE(
+               NULLIF(to_jsonb(b)->'fotos', '[]'::jsonb),
+               CASE
+                 WHEN NULLIF(BTRIM(to_jsonb(b)->>'foto_url'), '') IS NOT NULL
+                   THEN jsonb_build_array(BTRIM(to_jsonb(b)->>'foto_url'))
+                 ELSE '[]'::jsonb
+               END
+             ) AS fotos,
              disponibilidad.asientos_disponibles,
              disponibilidad.asientos_disponibles_normal,
              disponibilidad.asientos_disponibles_vip,
