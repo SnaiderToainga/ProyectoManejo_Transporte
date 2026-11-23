@@ -10,8 +10,15 @@ const bookingController = require('./controllers/bookingController');
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), bookingController.procesarWebhookStripe);
 app.use(express.json());
 
-// Servir la carpeta de comprobantes de forma estática
+// Servir la carpeta de comprobantes de forma estática con fallback controlado ante 404 en disco efímero (CR-11)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', (req, res) => {
+  res.set('X-Receipt-Fallback', 'missing-on-ephemeral-disk');
+  res.status(404).json({
+    error: 'El comprobante no está disponible en el almacenamiento temporal del servidor.',
+    code: 'RECEIPT_FILE_NOT_FOUND'
+  });
+});
 
 // Rutas
 const catalogRoutes = require('./routes/catalogRoutes');
