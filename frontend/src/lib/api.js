@@ -6,11 +6,14 @@ export class ApiError extends Error {
 }
 
 async function request(path, { signal, ...options } = {}) {
-  const timeout = AbortSignal.timeout(20000);
+  const timeout = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined;
+  const combinedSignal = signal && timeout && typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([signal, timeout])
+    : (signal || timeout);
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       ...options,
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      signal: combinedSignal,
       headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
     });
     const contentType = response.headers.get('content-type') || '';
@@ -49,7 +52,11 @@ export const api = {
   cooperatives: (signal) => call('cooperatives', [], () => request('/cooperativas', { signal })),
   frequencies: (signal) => call('frequencies', [], () => request('/frecuencias', { signal })),
   seats: (id, signal) => call('seats', [id], () => request(`/viajes/${encodeURIComponent(id)}/asientos`, { signal })),
-  reserve: (payload) => call('reserve', [payload], () => request('/reservas', { method: 'POST', body: JSON.stringify(payload) })),
+  reserve: (payload, customerToken = '') => call('reserve', [payload], () => request('/reservas', {
+    method: 'POST',
+    headers: customerToken ? { Authorization: `Bearer ${customerToken}` } : {},
+    body: JSON.stringify(payload)
+  })),
   reservation: (code, signal) => call('reservation', [code], () => request(`/reservas/${encodeURIComponent(code)}`, { signal })),
   receipt: (code, file, method = 'TRANSFERENCIA') => call('receipt', [code, file], () => {
     const body = new FormData(); body.append('comprobante', file); body.append('metodo_pago', method);

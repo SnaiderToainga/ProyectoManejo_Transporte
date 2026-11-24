@@ -141,8 +141,16 @@ exports.crearReserva = async (req, res) => {
 
     const quote = await quotePassengers(client, trip, pasajeros, req.body.tramo);
 
-    // Asociar usuario automáticamente si envía correo en Checkout o usa token de cliente
+    // Asociar usuario priorizando sesión autenticada de cliente y luego correo en Checkout
     let finalUsuarioId = usuario_id || null;
+    if (!finalUsuarioId) {
+      const bearer = customerAccess.extractBearerToken(req);
+      const tokenCustomerId = customerAccess.verifyCustomerToken(bearer);
+      if (tokenCustomerId) {
+        const authenticatedCustomer = await customerAccess.loadAuthenticatedCustomer(tokenCustomerId);
+        if (authenticatedCustomer) finalUsuarioId = authenticatedCustomer.id;
+      }
+    }
     if (!finalUsuarioId && emailContacto) {
       const emailLimpio = emailContacto.trim().toLowerCase();
       const userCheck = await client.query('SELECT id FROM usuarios WHERE LOWER(TRIM(correo)) = $1', [emailLimpio]);
@@ -160,27 +168,23 @@ exports.crearReserva = async (req, res) => {
         );
         finalUsuarioId = newUser.rows[0].id;
       }
-    } else if (!finalUsuarioId) {
-      const bearer = customerAccess.extractBearerToken(req);
-      const tokenCustomerId = customerAccess.verifyCustomerToken(bearer);
-      if (tokenCustomerId) {
-        const authenticatedCustomer = await customerAccess.loadAuthenticatedCustomer(tokenCustomerId);
-        if (authenticatedCustomer) finalUsuarioId = authenticatedCustomer.id;
-      }
     }
 
-    // Limpiar automáticamente reservas expiradas que quedaron pendientes
+    // Limpiar automáticamente solo reservas expiradas SIN comprobante subido
     await client.query(`
       UPDATE reservas 
       SET estado = 'CANCELADO' 
-      WHERE programacion_id = $1 AND estado = 'PENDIENTE' AND expira_en <= statement_timestamp()
+      WHERE programacion_id = $1
+        AND estado = 'PENDIENTE'
+        AND comprobante_url IS NULL
+        AND expira_en <= statement_timestamp()
     `, [trip.id]);
 
     // Calcular el total
     const total = quote.total;
 
-    // Generar código único de reserva (ej. RES-9F3A1C)
-    const codigoReserva = 'RES-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    // Generar código criptográfico único de reserva (ej. RES-9F3A1C)
+    const codigoReserva = 'RES-' + crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 6);
 
     // Tiempo de bloqueo: 5 minutos desde ahora
     const minutosBloqueo = process.env.TIEMPO_RESERVA_MINUTOS || 5;
@@ -340,6 +344,7 @@ exports.subirComprobante = async (req, res) => {
       `UPDATE reservas
        SET comprobante_url = $1,
            metodo_pago = $2,
+           expira_en = NULL,
            estado = 'PENDIENTE'
        WHERE id = $3 AND estado = 'PENDIENTE'
        RETURNING *`,

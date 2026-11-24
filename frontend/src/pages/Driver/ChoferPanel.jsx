@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import jsQR from 'jsqr';
-import { shortTime } from '../../lib/format.js';
+import { shortTime, today } from '../../lib/format.js';
 import { 
   Bus, QrCode, CheckCircle2, AlertTriangle, XCircle, Play, CheckCheck, 
-  RefreshCw, Users, Shield, ArrowRight, UserCheck, PhoneCall, Volume2, 
-  VolumeX, Camera, ChevronRight, Clock, MapPin, Search, Upload, LogOut
+  RefreshCw, Volume2, VolumeX, Camera, Search, Upload, LogOut
 } from 'lucide-react';
 
 const getApiBase = () => {
@@ -47,6 +46,9 @@ const playBeep = (type = 'success') => {
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.35);
     }
+    setTimeout(() => {
+      try { ctx.close(); } catch {}
+    }, 450);
   } catch {}
 };
 
@@ -82,6 +84,17 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
   const animFrameRef = useRef(null);
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
+  const camaraActivaRef = useRef(false);
+  const viajeSeleccionadoRef = useRef(null);
+
+  useEffect(() => {
+    viajeSeleccionadoRef.current = viajeSeleccionado;
+  }, [viajeSeleccionado]);
+
+  const authHeaders = (extra = {}) => ({
+    ...extra,
+    ...(usuario?.token ? { Authorization: `Bearer ${usuario.token}` } : {}),
+  });
 
   // 1. Cargar viajes del día
   const cargarViajes = async () => {
@@ -90,6 +103,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
     try {
       let url = `${getApiBase()}/chofer/viajes`;
       const params = new URLSearchParams();
+      params.append('fecha', today());
       if (esChofer && usuario?.cooperativa_id) {
         params.append('cooperativa_id', usuario.cooperativa_id);
         if (usuario.bus_id) params.append('bus_id', usuario.bus_id);
@@ -98,24 +112,26 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
       if (params.toString()) {
         url += `?${params.toString()}`;
       }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Error al consultar viajes');
-      const data = await res.json();
-      setViajes(data);
+      const res = await fetch(url, { headers: authHeaders() });
+      const data = await res.json().catch(() => ([]));
+      if (!res.ok) throw new Error(data?.error || 'Error al consultar viajes');
+      const list = Array.isArray(data) ? data : [];
+      setViajes(list);
 
       // Si no hay viaje seleccionado o el seleccionado ya no existe, seleccionar el primero activo
-      if (data.length > 0) {
-        if (!viajeSeleccionado) {
-          const viajeEnRuta = data.find(v => v.estado === 'EN_RUTA') || data[0];
+      if (list.length > 0) {
+        const prev = viajeSeleccionadoRef.current;
+        if (!prev) {
+          const viajeEnRuta = list.find(v => v.estado === 'EN_RUTA') || list[0];
           setViajeSeleccionado(viajeEnRuta);
         } else {
-          const actual = data.find(v => v.id === viajeSeleccionado.id);
+          const actual = list.find(v => v.id === prev.id);
           if (actual) setViajeSeleccionado(actual);
         }
       }
     } catch (err) {
       console.error(err);
-      setErrorMsg('No se pudieron cargar los viajes del día. Verifique la conexión.');
+      setErrorMsg(err.message || 'No se pudieron cargar los viajes del día. Verifique la conexión.');
     } finally {
       setCargandoViajes(false);
     }
@@ -123,19 +139,22 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
 
   useEffect(() => {
     cargarViajes();
-  }, []);
+  }, [usuario?.token]);
 
   // 2. Cargar manifiesto cuando cambia el viaje seleccionado
   const cargarManifiesto = async (viajeId) => {
     if (!viajeId) return;
     setCargandoManifiesto(true);
     try {
-      const res = await fetch(`${getApiBase()}/chofer/viajes/${viajeId}/manifiesto`);
-      if (!res.ok) throw new Error('Error al cargar manifiesto');
-      const data = await res.json();
+      const res = await fetch(`${getApiBase()}/chofer/viajes/${viajeId}/manifiesto`, {
+        headers: authHeaders()
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Error al cargar manifiesto');
       setManifiesto(data);
     } catch (err) {
       console.error(err);
+      setErrorMsg(err.message || 'No se pudo cargar el manifiesto del viaje.');
     } finally {
       setCargandoManifiesto(false);
     }
@@ -152,9 +171,10 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
     if (!confirm('¿Confirmas el inicio de este trayecto? El estado cambiará a "EN RUTA".')) return;
     try {
       const res = await fetch(`${getApiBase()}/chofer/viajes/${viajeId}/iniciar`, {
-        method: 'POST'
+        method: 'POST',
+        headers: authHeaders()
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Error al iniciar viaje');
       await cargarViajes();
       await cargarManifiesto(viajeId);
@@ -169,9 +189,10 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
     if (!confirm('¿Deseas finalizar este viaje? El estado cambiará a "FINALIZADO" y concluirá el servicio.')) return;
     try {
       const res = await fetch(`${getApiBase()}/chofer/viajes/${viajeId}/finalizar`, {
-        method: 'POST'
+        method: 'POST',
+        headers: authHeaders()
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Error al finalizar viaje');
       await cargarViajes();
       await cargarManifiesto(viajeId);
@@ -184,20 +205,21 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
   // 5. Validar Boleto por QR o Código (Requerimiento VENT-05)
   const ejecutarValidacion = async (payloadTexto) => {
     if (!payloadTexto || !payloadTexto.trim()) return;
+    const activeTrip = viajeSeleccionadoRef.current || viajeSeleccionado;
     setProcesandoValidacion(true);
     setResultadoValidacion(null);
 
     try {
       const res = await fetch(`${getApiBase()}/chofer/validar-qr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           qr_payload: payloadTexto.trim(),
-          programacion_id: viajeSeleccionado?.id
+          programacion_id: activeTrip?.id
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.valido) {
         setResultadoValidacion({
@@ -212,11 +234,11 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
         if (sonidoHabilitado) playBeep('success');
         setInputCodigo('');
         // Recargar manifiesto para actualizar contadores
-        if (viajeSeleccionado?.id) cargarManifiesto(viajeSeleccionado.id);
+        if (activeTrip?.id) cargarManifiesto(activeTrip.id);
       } else {
         setResultadoValidacion({
           tipo: data.ya_usado ? 'DUPLICADO' : 'ERROR',
-          mensaje: data.mensaje || 'Boleto inválido o no reconocido',
+          mensaje: data.mensaje || data.error || 'Boleto inválido o no reconocido',
           pasajero: data.pasajero,
           asiento: data.asiento,
           cedula: data.cedula,
@@ -239,11 +261,13 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
   const handleToggleManual = async (boletoId) => {
     try {
       const res = await fetch(`${getApiBase()}/chofer/boletos/${boletoId}/toggle-abordaje`, {
-        method: 'POST'
+        method: 'POST',
+        headers: authHeaders()
       });
-      if (!res.ok) throw new Error('Error al actualizar');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Error al actualizar');
       if (sonidoHabilitado) playBeep('success');
-      if (viajeSeleccionado?.id) cargarManifiesto(viajeSeleccionado.id);
+      if (viajeSeleccionadoRef.current?.id) cargarManifiesto(viajeSeleccionadoRef.current.id);
     } catch (err) {
       alert(err.message);
     }
@@ -328,24 +352,18 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
   };
 
   const iniciarCamara = async () => {
-    setCamaraActiva(true);
     setResultadoValidacion(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('Tu navegador no admite cámara en vivo aquí. Usa "Tomar Foto / Subir QR" o ingresa el código manualmente.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
+        video: { facingMode: { ideal: 'environment' } }
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-
-        if ('BarcodeDetector' in window) {
-          detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
-        } else {
-          detectorRef.current = null;
-        }
-        escanearFrame();
-      }
+      camaraActivaRef.current = true;
+      setCamaraActiva(true);
     } catch (err) {
       console.warn('No se pudo acceder a la cámara trasera:', err);
       alert('No se pudo iniciar la cámara en este navegador. Puedes usar "Tomar Foto / Subir QR" o ingresar el código manualmente.');
@@ -354,21 +372,28 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
   };
 
   const detenerCamara = () => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    camaraActivaRef.current = false;
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setCamaraActiva(false);
   };
 
   const escanearFrame = async () => {
-    if (!videoRef.current || !camaraActiva) return;
+    if (!videoRef.current || !camaraActivaRef.current) return;
     try {
       if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
         if (detectorRef.current) {
           const barcodes = await detectorRef.current.detect(videoRef.current);
-          if (barcodes.length > 0) {
+          if (barcodes.length > 0 && barcodes[0].rawValue) {
             const qrVal = barcodes[0].rawValue;
             detenerCamara();
             ejecutarValidacion(qrVal);
@@ -376,10 +401,11 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
           }
         } else {
           // Fallback con jsQR (Firefox y navegadores sin BarcodeDetector nativo)
-          const canvas = canvasRef.current || document.createElement('canvas');
+          if (!canvasRef.current) canvasRef.current = document.createElement('canvas');
+          const canvas = canvasRef.current;
           canvas.width = videoRef.current.videoWidth || 640;
           canvas.height = videoRef.current.videoHeight || 480;
-          const ctx = canvas.getContext('2d');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
           const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = jsQR(imgData.data, imgData.width, imgData.height, {
@@ -393,8 +419,28 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
         }
       }
     } catch {}
-    animFrameRef.current = requestAnimationFrame(escanearFrame);
+    if (camaraActivaRef.current) {
+      animFrameRef.current = requestAnimationFrame(escanearFrame);
+    }
   };
+
+  useEffect(() => {
+    if (!camaraActiva || !streamRef.current || !videoRef.current) return;
+    const videoEl = videoRef.current;
+    videoEl.srcObject = streamRef.current;
+    videoEl.play().catch(() => {});
+
+    if ('BarcodeDetector' in window) {
+      try {
+        detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        detectorRef.current = null;
+      }
+    } else {
+      detectorRef.current = null;
+    }
+    escanearFrame();
+  }, [camaraActiva]);
 
   useEffect(() => {
     return () => detenerCamara();
@@ -525,6 +571,33 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
         </div>
       </div>
 
+      {/* Mensaje de error si falla conexión o sesión */}
+      {errorMsg && (
+        <div role="alert" style={{
+          marginBottom: '1rem',
+          padding: '0.85rem 1rem',
+          borderRadius: '12px',
+          border: '1px solid #fecaca',
+          background: '#fef2f2',
+          color: '#991b1b',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem'
+        }}>
+          <span>{errorMsg}</span>
+          <button
+            type="button"
+            onClick={cargarViajes}
+            style={{ background: '#991b1b', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.35rem 0.7rem', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700 }}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {/* 2. Selector de Turnos / Viajes Asignados (Requerimiento RUTA-16) */}
       <div style={{ marginBottom: '1.5rem', background: '#f8fafc', padding: '1rem', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -542,7 +615,10 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: '#dcfce7', border: '1px solid #86efac', padding: '0.4rem 0.8rem', borderRadius: '10px' }}>
               <Bus size={18} color="#16a34a" />
               <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>
-                Unidad #{usuario?.bus_disco || '15'} ({usuario?.bus_placa || 'TAA-1515'}) · {usuario?.cooperativa_nombre || 'CITA'}
+                {usuario?.bus_disco || viajeSeleccionado?.numero_disco
+                  ? `Unidad #${usuario?.bus_disco || viajeSeleccionado?.numero_disco}${usuario?.bus_placa || viajeSeleccionado?.placa ? ` (${usuario?.bus_placa || viajeSeleccionado?.placa})` : ''}`
+                  : 'Unidad asignada'}
+                {usuario?.cooperativa_nombre ? ` · ${usuario.cooperativa_nombre}` : ''}
               </div>
             </div>
           ) : (
@@ -771,9 +847,15 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
             </p>
 
             {/* Opciones de Escaneo */}
+            {viajeSeleccionado.estado === 'FINALIZADO' && (
+              <div style={{ fontSize: '0.82rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.55rem 0.8rem', marginBottom: '0.85rem', fontWeight: 600 }}>
+                Este viaje ya fue finalizado. La validación en puerta está deshabilitada.
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
               <button
                 type="button"
+                disabled={viajeSeleccionado.estado === 'FINALIZADO'}
                 onClick={camaraActiva ? detenerCamara : iniciarCamara}
                 style={{
                   background: camaraActiva ? '#ef4444' : '#0f172a',
@@ -783,7 +865,8 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                   padding: '0.65rem 1rem',
                   fontSize: '0.85rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: viajeSeleccionado.estado === 'FINALIZADO' ? 'not-allowed' : 'pointer',
+                  opacity: viajeSeleccionado.estado === 'FINALIZADO' ? 0.5 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.4rem'
@@ -795,6 +878,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
 
               <button
                 type="button"
+                disabled={viajeSeleccionado.estado === 'FINALIZADO'}
                 onClick={() => fileInputRef.current?.click()}
                 style={{
                   background: '#0284c7',
@@ -804,7 +888,8 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                   padding: '0.65rem 1rem',
                   fontSize: '0.85rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: viajeSeleccionado.estado === 'FINALIZADO' ? 'not-allowed' : 'pointer',
+                  opacity: viajeSeleccionado.estado === 'FINALIZADO' ? 0.5 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.4rem',
@@ -824,11 +909,12 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
               />
 
               <form 
-                onSubmit={(e) => { e.preventDefault(); ejecutarValidacion(inputCodigo); }}
+                onSubmit={(e) => { e.preventDefault(); if (viajeSeleccionado.estado !== 'FINALIZADO') ejecutarValidacion(inputCodigo); }}
                 style={{ display: 'flex', flex: 1, minWidth: 240, gap: '0.35rem' }}
               >
                 <input
                   type="text"
+                  disabled={viajeSeleccionado.estado === 'FINALIZADO'}
                   placeholder="Pegar QR o Código Reserva (ej: RES-123456)..."
                   value={inputCodigo}
                   onChange={(e) => setInputCodigo(e.target.value)}
@@ -842,7 +928,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                 />
                 <button
                   type="submit"
-                  disabled={procesandoValidacion || !inputCodigo.trim()}
+                  disabled={viajeSeleccionado.estado === 'FINALIZADO' || procesandoValidacion || !inputCodigo.trim()}
                   style={{
                     background: '#059669',
                     color: '#fff',
@@ -851,7 +937,8 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                     padding: '0.65rem 1rem',
                     fontWeight: 700,
                     fontSize: '0.85rem',
-                    cursor: 'pointer'
+                    cursor: viajeSeleccionado.estado === 'FINALIZADO' ? 'not-allowed' : 'pointer',
+                    opacity: viajeSeleccionado.estado === 'FINALIZADO' ? 0.5 : 1
                   }}
                 >
                   {procesandoValidacion ? 'Validando...' : 'Validar'}
@@ -1083,8 +1170,9 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
 
                       {/* Botón de alternancia manual (para contingencias) */}
                       <button
+                        disabled={viajeSeleccionado.estado === 'FINALIZADO'}
                         onClick={() => handleToggleManual(p.boleto_id)}
-                        title={p.validado_en_puerta ? 'Desmarcar abordaje' : 'Validar abordaje manual'}
+                        title={viajeSeleccionado.estado === 'FINALIZADO' ? 'Viaje finalizado' : (p.validado_en_puerta ? 'Desmarcar abordaje' : 'Validar abordaje manual')}
                         style={{
                           border: 'none',
                           background: p.validado_en_puerta ? '#e2e8f0' : '#10b981',
@@ -1093,7 +1181,8 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
                           padding: '0.35rem 0.6rem',
                           fontSize: '0.75rem',
                           fontWeight: 600,
-                          cursor: 'pointer'
+                          cursor: viajeSeleccionado.estado === 'FINALIZADO' ? 'not-allowed' : 'pointer',
+                          opacity: viajeSeleccionado.estado === 'FINALIZADO' ? 0.5 : 1
                         }}
                       >
                         {p.validado_en_puerta ? 'Desmarcar' : 'Validar'}

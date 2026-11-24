@@ -1,4 +1,10 @@
-import { validarCedulaEcuador, validarCelularEcuador, validarPassword, validarResolucionANT } from './validation.js';
+import {
+  diagnosticarRucEcuador,
+  validarCedulaEcuador,
+  validarCelularEcuador,
+  validarPassword,
+  validarResolucionANT
+} from './validation.js';
 
 export function cooperativeDraft(cooperative = {}) {
   const manager = cooperative.gerente || {};
@@ -25,7 +31,8 @@ export function cooperativeErrors(form, step, editing = false) {
   const errors = {};
   if (step === 0) {
     if (!form.nombre.trim()) errors.nombre = 'Escribe el nombre de la cooperativa.';
-    if (!/^\d{10}001$/.test(form.ruc)) errors.ruc = 'El RUC debe tener 13 dígitos y terminar en 001.';
+    const rucCheck = diagnosticarRucEcuador(form.ruc);
+    if (!rucCheck.valido) errors.ruc = rucCheck.error;
     if (!validarResolucionANT(form.resolucion_ant)) errors.resolucion_ant = 'Ingresa una resolución ANT válida (ej. ANT-RES-2026-001).';
     if (!validarCelularEcuador(form.telefono)) errors.telefono = 'Ingresa un celular de 10 dígitos que empiece por 09.';
     if (!form.direccion.trim()) errors.direccion = 'Escribe la dirección de la matriz.';
@@ -33,7 +40,12 @@ export function cooperativeErrors(form, step, editing = false) {
   }
   if (step === 2 && !editing) {
     if (form.gerente_nombre.trim().length < 3) errors.gerente_nombre = 'Escribe el nombre completo del gerente.';
-    if (!validarCedulaEcuador(form.gerente_cedula)) errors.gerente_cedula = 'La cédula no supera la validación Módulo 10.';
+    const cedulaClean = String(form.gerente_cedula || '').trim();
+    if (!/^\d{10}$/.test(cedulaClean)) {
+      errors.gerente_cedula = 'La cédula debe tener exactamente 10 dígitos numéricos.';
+    } else if (!validarCedulaEcuador(cedulaClean)) {
+      errors.gerente_cedula = 'La cédula tiene 10 dígitos pero no supera el dígito verificador Módulo 10 de Ecuador.';
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.gerente_correo.trim())) errors.gerente_correo = 'Ingresa un correo válido.';
     if (!validarCelularEcuador(form.gerente_telefono)) errors.gerente_telefono = 'Ingresa un celular válido que empiece por 09.';
     if (!validarPassword(form.gerente_password) || !/[^a-z0-9]/i.test(form.gerente_password)) errors.gerente_password = 'Usa de 8 a 128 caracteres, mayúscula, minúscula, número y símbolo.';

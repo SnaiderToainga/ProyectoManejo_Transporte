@@ -71,9 +71,10 @@ export function findSegmentIndices(itinerary, origenFilter = '', destinoFilter =
 
 export function calculateSegmentPrice(precioBase, totalSegments, traveledSegments) {
   const base = Number(precioBase) || 0;
-  if (totalSegments <= 1 || traveledSegments >= totalSegments) return Number(base.toFixed(2));
-  const raw = base * (Math.max(1, traveledSegments) / totalSegments);
-  return Math.max(0.5, Number(raw.toFixed(2)));
+  const baseCents = Math.round(base * 100);
+  if (totalSegments <= 1 || traveledSegments >= totalSegments) return baseCents / 100;
+  const rawCents = Math.round((baseCents * Math.max(1, traveledSegments)) / totalSegments);
+  return Math.max(50, rawCents) / 100;
 }
 
 export function resolveTripSegment(trip, origenFilter = '', destinoFilter = '') {

@@ -22,7 +22,9 @@ router.post('/oficina/reservas/:id/validar', ...officeAccess, officeController.v
 router.put('/oficina/validar-comprobante/:id', ...officeAccess, officeController.validarComprobante);
 router.put('/reservas/:id/validar', ...officeAccess, officeController.validarComprobante);
 
-// 3. Venta directa en ventanilla
+// 3. Venta directa en ventanilla y consulta de pasajero frecuente (VENT-19)
+router.get('/oficina/pasajero/:cedula', ...officeAccess, officeController.buscarPasajeroPorCedula);
+router.get('/pasajero/:cedula', ...officeAccess, officeController.buscarPasajeroPorCedula);
 router.post('/oficina/venta-ventanilla', ...officeAccess, officeController.crearVentaVentanilla);
 router.post('/oficina/ventas', ...officeAccess, officeController.crearVentaVentanilla);
 router.post('/venta-ventanilla', ...officeAccess, officeController.crearVentaVentanilla);

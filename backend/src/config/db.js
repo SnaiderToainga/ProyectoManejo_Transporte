@@ -11,16 +11,37 @@ const pool = new Pool({
     rejectUnauthorized: false
   },
   max: Number(process.env.PG_POOL_MAX) || 10,
-  idleTimeoutMillis: 30000,
+  idleTimeoutMillis: 60000,
   connectionTimeoutMillis: 10000,
   keepAlive: true
 });
 
+let connectedLogged = false;
 pool.on('connect', () => {
-  console.log('Conectado a la base de datos Supabase');
+  if (!connectedLogged) {
+    connectedLogged = true;
+    console.log('Conectado a la base de datos Supabase');
+  }
 });
+
+pool.on('error', (err) => {
+  console.error('Error inesperado en el pool de PostgreSQL:', err.message);
+});
+
+async function warmPool(count = 3) {
+  try {
+    const clients = await Promise.all(
+      Array.from({ length: count }, () => pool.connect())
+    );
+    await Promise.all(clients.map(c => c.query('SELECT 1')));
+    clients.forEach(c => c.release());
+  } catch (err) {
+    console.warn('Precalentamiento parcial del pool:', err.message);
+  }
+}
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
-  pool
+  pool,
+  warmPool
 };

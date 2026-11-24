@@ -8,7 +8,6 @@ import { loadSelection, saveSelection, selectionKey } from './lib/purchaseFlow.j
 
 const SeatSelection = lazy(() => import('./pages/Client/SeatSelection.jsx'));
 const Checkout = lazy(() => import('./pages/Client/Checkout.jsx'));
-const TicketLookup = lazy(() => import('./pages/Client/TicketLookup.jsx'));
 const HistorialCompras = lazy(() => import('./pages/Client/HistorialCompras.jsx'));
 const CustomerAccount = lazy(() => import('./pages/Client/CustomerAccount.jsx'));
 const Login = lazy(() => import('./pages/Admin/Login.jsx'));
@@ -41,7 +40,13 @@ export default function App() {
 
   const [code, setCode] = useState(getUrlCode);
   const [historyToken, setHistoryToken] = useState(historyTokenFromHash);
-  const [customerToken, setCustomerToken] = useState(() => { try { return sessionStorage.getItem('transporte_cliente_token') || ''; } catch { return ''; } });
+  const [customerToken, setCustomerToken] = useState(() => {
+    try {
+      return sessionStorage.getItem('transporte_cliente_token') || localStorage.getItem('transporte_cliente_token') || '';
+    } catch {
+      return '';
+    }
+  });
   const [customer, setCustomer] = useState(null);
   const [customerError, setCustomerError] = useState('');
   const customerFirstName = customerToken && customer?.nombre
@@ -49,11 +54,22 @@ export default function App() {
     : '';
   const clearCustomer = () => {
     setCustomerToken(''); setHistoryToken(''); setCustomer(null); setCustomerError(''); setCheckoutDraft(null);
-    try { sessionStorage.removeItem('transporte_cliente_token'); } catch {}
+    try {
+      sessionStorage.removeItem('transporte_cliente_token');
+      localStorage.removeItem('transporte_cliente_token');
+    } catch {}
   };
   const handleCustomerSession = (result) => {
     setCustomerToken(result.token); setCustomer(result.cliente); setCustomerError('');
-    try { sessionStorage.setItem('transporte_cliente_token', result.token); } catch {}
+    try {
+      sessionStorage.setItem('transporte_cliente_token', result.token);
+      localStorage.setItem('transporte_cliente_token', result.token);
+    } catch {}
+    if (trip && page === 'mi-cuenta') {
+      setPage('search');
+      window.location.hash = 'buscar';
+      window.scrollTo(0, 0);
+    }
   };
   useEffect(() => {
     if (!customerToken) return;
@@ -65,8 +81,14 @@ export default function App() {
       }
     }).catch(error => {
       if (!controller.signal.aborted) {
-        if ([401, 403].includes(error.status)) { setCustomerToken(''); setCustomer(null); try { sessionStorage.removeItem('transporte_cliente_token'); } catch {} }
-        setCustomerError('No pudimos verificar tu sesión de cliente. Puedes volver a ingresar o continuar como visitante.');
+        if ([401, 403].includes(error.status)) {
+          setCustomerToken(''); setCustomer(null);
+          try {
+            sessionStorage.removeItem('transporte_cliente_token');
+            localStorage.removeItem('transporte_cliente_token');
+          } catch {}
+        }
+        setCustomerError('Tu sesión de cliente expiró o no se pudo verificar. Inicia sesión nuevamente para comprar.');
       }
     });
     return () => controller.abort();
@@ -147,7 +169,12 @@ export default function App() {
     setReserved(false);
     setCode('');
     setPage('search');
-    window.location.hash = 'buscar';
+    if (window.location.search || window.location.pathname !== '/') {
+      const keepDemo = isDemo ? '?demo=1' : '';
+      window.history.replaceState(null, '', `/${keepDemo}#buscar`);
+    } else {
+      window.location.hash = 'buscar';
+    }
     window.scrollTo(0, 0);
   };
 
@@ -184,6 +211,11 @@ export default function App() {
 
   const goChofer = () => {
     setMenuOpen(false);
+    if (!canAccessDriver(usuario)) {
+      goLogin('Acceso restringido: Se requieren credenciales de Chofer o Administrador');
+      return;
+    }
+    setAuthError('');
     setPage('chofer');
     window.location.hash = 'chofer';
     window.scrollTo(0, 0);
@@ -242,7 +274,7 @@ export default function App() {
         }
         setAuthError('');
         setPage('oficina');
-      } else if (hash === '#boleto' || getUrlCode()) {
+      } else if (hash === '#boleto' || (hash !== '#buscar' && getUrlCode())) {
         const directCode = getUrlCode();
         if (directCode) setCode(directCode);
         setPage('ticket');
@@ -344,17 +376,20 @@ export default function App() {
                     {`Hola, ${customerFirstName}`}
                   </span>
                 </button>
+                <button className="nav-link" onClick={clearCustomer} title="Cerrar sesión de cliente">
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <LogOut size={15} aria-hidden="true" />
+                    Salir
+                  </span>
+                </button>
               </>
             ) : (
               <>
                 <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
                   Buscar viaje
                 </button>
-                <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
-                  Mi boleto
-                </button>
                 <button
-                  className={`nav-link ${page === 'mi-cuenta' || page === 'mis-compras' ? 'active' : ''}`}
+                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
                   onClick={goCustomer}
                 >
                   Mi cuenta
@@ -441,19 +476,56 @@ export default function App() {
               }}
             />
           )
-        ) : page === 'mi-cuenta' ? (
+        ) : page === 'mi-cuenta' || page === 'ticket' ? (
           <>
             {customerError && <p role="alert" className="inline-error">{customerError}</p>}
-            <CustomerAccount customer={customer} onSession={handleCustomerSession} onLogout={clearCustomer} onHistory={goHistory} onTicket={() => goTicket()} onContinue={trip ? resumePurchase : goSearch} />
+            <CustomerAccount
+              customer={customer}
+              token={customerToken}
+              pendingTrip={page === 'mi-cuenta' ? trip : null}
+              requireTicketLogin={page === 'ticket'}
+              initialTab={page === 'ticket' ? 'boleto' : 'compras'}
+              initialTicketCode={code}
+              onSession={handleCustomerSession}
+              onLogout={clearCustomer}
+              onHistory={goHistory}
+              onSearch={goSearch}
+              onAdminLogin={() => goLogin()}
+              hasActiveTrip={Boolean(trip)}
+              onContinue={trip ? resumePurchase : goSearch}
+            />
           </>
         ) : page === 'mis-compras' ? (
-          <>
-            {trip && <button type="button" className="back-link" onClick={resumePurchase}>Volver a mi compra</button>}
-            <HistorialCompras token={customerToken || historyToken} customer={customer}
-              onAccount={goCustomer} onClearAccess={() => { clearCustomer(); setHistoryToken(''); }} onVerBoleto={goTicket} />
-          </>
-        ) : page === 'ticket' ? (
-          <TicketLookup key={code} initialCode={code} onBack={goSearch} />
+          customer && customerToken ? (
+            <>
+              {trip && <button type="button" className="back-link" onClick={resumePurchase}>Volver a mi compra</button>}
+              <HistorialCompras token={customerToken || historyToken} customer={customer}
+                onAccount={goCustomer} onClearAccess={() => { clearCustomer(); setHistoryToken(''); }} onVerBoleto={goTicket} />
+            </>
+          ) : (
+            <CustomerAccount
+              customer={customer}
+              token={customerToken}
+              requireTicketLogin
+              onSession={handleCustomerSession}
+              onLogout={clearCustomer}
+              onHistory={goHistory}
+              onSearch={goSearch}
+              onAdminLogin={() => goLogin()}
+            />
+          )
+        ) : trip && (!customer || !customerToken) ? (
+          <CustomerAccount
+            customer={customer}
+            token={customerToken}
+            pendingTrip={trip}
+            onSession={handleCustomerSession}
+            onLogout={clearCustomer}
+            onHistory={goHistory}
+            onSearch={goSearch}
+            onAdminLogin={() => goLogin()}
+            hasActiveTrip={false}
+          />
         ) : trip && seats.length ? (
           <Checkout key={selectionKey(trip)} trip={trip} seats={seats} draft={checkoutDraft} onDraftChange={setCheckoutDraft}
             customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
@@ -472,11 +544,11 @@ export default function App() {
           />
         ) : (
           <>
-            {recalledCode() && (
+            {customer && customerToken && recalledCode() && (
               <div className="resume-banner">
-                ¿Deseas retomar tu reserva?{' '}
+                ¿Deseas revisar tu reserva reciente?{' '}
                 <button className="inline-link" onClick={() => goTicket(recalledCode())}>
-                  Consultar {recalledCode()}
+                  Ver boleto {recalledCode()}
                 </button>
               </div>
             )}
@@ -487,6 +559,10 @@ export default function App() {
                 setSelectedIds([]);
                 setCheckoutDraft(null);
                 setReserved(false);
+                if (!customer || !customerToken) {
+                  setPage('mi-cuenta');
+                  window.location.hash = 'mi-cuenta';
+                }
                 window.scrollTo(0, 0);
               }}
             />

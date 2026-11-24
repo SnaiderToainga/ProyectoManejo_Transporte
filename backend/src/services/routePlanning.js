@@ -2,20 +2,61 @@ const { planningError, positiveId, dateRange } = require('./routeRotation');
 const { seatIds, occupiedReservation } = require('./seatInventory');
 
 async function catalog(client, cooperativeId) {
-  const queries = [
-    ['buses', `SELECT b.*, m.grupo_id FROM buses b LEFT JOIN grupo_bus_miembros m ON m.bus_id=b.id
-      WHERE b.cooperativa_id=$1 ORDER BY b.numero_disco, b.id`],
-    ['frecuencias', `SELECT f.*, m.grupo_id FROM frecuencias f
-      LEFT JOIN grupo_frecuencia_miembros m ON m.frecuencia_id=f.id
-      WHERE f.cooperativa_id=$1 AND f.activo=TRUE ORDER BY f.hora_salida,f.id`],
-    ['grupos_buses', 'SELECT *, inicio_ciclo::text AS inicio_ciclo FROM grupos_buses WHERE cooperativa_id=$1 ORDER BY id'],
-    ['grupos_frecuencias', 'SELECT * FROM grupos_frecuencias WHERE cooperativa_id=$1 ORDER BY id'],
-    ['vinculos', `SELECT v.* FROM grupo_vinculos v JOIN grupos_buses g ON g.id=v.grupo_buses_id WHERE g.cooperativa_id=$1`],
-    ['sucursales', 'SELECT * FROM sucursales WHERE cooperativa_id=$1 ORDER BY nombre']
-  ];
-  const result = {};
-  for (const [key, sql] of queries) result[key] = (await client.query(sql, [cooperativeId])).rows;
-  return result;
+  const { rows } = await client.query(`
+    SELECT json_build_object(
+      'buses', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT b.*, m.grupo_id
+          FROM buses b
+          LEFT JOIN grupo_bus_miembros m ON m.bus_id = b.id
+          WHERE b.cooperativa_id = $1
+          ORDER BY b.numero_disco, b.id
+        ) t
+      ), '[]'::json),
+      'frecuencias', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT f.*, m.grupo_id
+          FROM frecuencias f
+          LEFT JOIN grupo_frecuencia_miembros m ON m.frecuencia_id = f.id
+          WHERE f.cooperativa_id = $1 AND f.activo = TRUE
+          ORDER BY f.hora_salida, f.id
+        ) t
+      ), '[]'::json),
+      'grupos_buses', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT *, inicio_ciclo::text AS inicio_ciclo
+          FROM grupos_buses
+          WHERE cooperativa_id = $1
+          ORDER BY id
+        ) t
+      ), '[]'::json),
+      'grupos_frecuencias', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT *
+          FROM grupos_frecuencias
+          WHERE cooperativa_id = $1
+          ORDER BY id
+        ) t
+      ), '[]'::json),
+      'vinculos', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT v.*
+          FROM grupo_vinculos v
+          JOIN grupos_buses g ON g.id = v.grupo_buses_id
+          WHERE g.cooperativa_id = $1
+        ) t
+      ), '[]'::json),
+      'sucursales', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT *
+          FROM sucursales
+          WHERE cooperativa_id = $1
+          ORDER BY nombre
+        ) t
+      ), '[]'::json)
+    ) AS payload
+  `, [cooperativeId]);
+  return rows[0].payload;
 }
 
 async function createGroup(client, cooperativeId, data) {
@@ -45,6 +86,110 @@ async function createGroup(client, cooperativeId, data) {
   return group.rows[0];
 }
 
+async function addGroupMembers(client, cooperativeId, groupIdParam, data) {
+  const groupId = positiveId(groupIdParam, 'Grupo');
+  const clase = String(data?.clase || 'BUSES').toUpperCase();
+  if (!['BUSES', 'FRECUENCIAS'].includes(clase)) throw planningError('Clase de grupo inválida.');
+  const ids = seatIds(data?.miembros);
+  if (!ids || !ids.length || ids.length > 100) {
+    throw planningError('Selecciona al menos un miembro válido para agregar al grupo.');
+  }
+
+  const isBus = clase === 'BUSES';
+  const groupTable = isBus ? 'grupos_buses' : 'grupos_frecuencias';
+  const memberTable = isBus ? 'grupo_bus_miembros' : 'grupo_frecuencia_miembros';
+  const col = isBus ? 'bus_id' : 'frecuencia_id';
+  const source = isBus ? 'buses' : 'frecuencias';
+
+  const groupCheck = await client.query(
+    `SELECT id FROM ${groupTable} WHERE id=$1 AND cooperativa_id=$2`,
+    [groupId, cooperativeId]
+  );
+  if (!groupCheck.rows[0]) throw planningError('El grupo no pertenece a tu cooperativa.', 403);
+
+  const validMembers = await client.query(
+    `SELECT id FROM ${source} WHERE cooperativa_id=$1 AND id=ANY($2::int[]) ${isBus ? '' : 'AND activo=TRUE'} FOR SHARE`,
+    [cooperativeId, ids]
+  );
+  if (validMembers.rows.length !== ids.length) {
+    throw planningError('Los miembros seleccionados deben pertenecer a tu cooperativa.', 403);
+  }
+
+  const existing = await client.query(
+    `SELECT ${col} AS member_id, grupo_id FROM ${memberTable} WHERE ${col}=ANY($1::int[])`,
+    [ids]
+  );
+  const inOtherGroup = existing.rows.find(r => Number(r.grupo_id) !== groupId);
+  if (inOtherGroup) {
+    throw planningError(
+      isBus
+        ? 'El bus seleccionado ya pertenece a otro grupo. Retíralo primero de ese grupo.'
+        : 'La frecuencia seleccionada ya pertenece a otro grupo. Retírala primero de ese grupo.',
+      409
+    );
+  }
+
+  const alreadyHere = new Set(existing.rows.map(r => Number(r.member_id)));
+  const toInsert = ids.filter(id => !alreadyHere.has(id));
+  if (!toInsert.length) return { grupo_id: groupId, agregados: 0 };
+
+  if (!isBus) {
+    const countRes = await client.query(`SELECT COUNT(*)::int AS total FROM ${memberTable} WHERE grupo_id=$1`, [groupId]);
+    if ((countRes.rows[0]?.total || 0) + toInsert.length > 20) {
+      throw planningError('Un grupo admite hasta 20 frecuencias.');
+    }
+  }
+
+  await client.query(
+    `INSERT INTO ${memberTable}(${col}, grupo_id) SELECT unnest($1::int[]), $2`,
+    [toInsert, groupId]
+  );
+  return { grupo_id: groupId, agregados: toInsert.length };
+}
+
+async function removeGroupMember(client, cooperativeId, groupIdParam, memberIdParam, claseParam) {
+  const groupId = positiveId(groupIdParam, 'Grupo');
+  const memberId = positiveId(memberIdParam, 'Miembro');
+  const clase = String(claseParam || 'BUSES').toUpperCase();
+  if (!['BUSES', 'FRECUENCIAS'].includes(clase)) throw planningError('Clase de grupo inválida.');
+
+  const isBus = clase === 'BUSES';
+  const groupTable = isBus ? 'grupos_buses' : 'grupos_frecuencias';
+  const memberTable = isBus ? 'grupo_bus_miembros' : 'grupo_frecuencia_miembros';
+  const col = isBus ? 'bus_id' : 'frecuencia_id';
+
+  const groupCheck = await client.query(
+    `SELECT id FROM ${groupTable} WHERE id=$1 AND cooperativa_id=$2`,
+    [groupId, cooperativeId]
+  );
+  if (!groupCheck.rows[0]) throw planningError('El grupo no pertenece a tu cooperativa.', 403);
+
+  const countRes = await client.query(`SELECT COUNT(*)::int AS total FROM ${memberTable} WHERE grupo_id=$1`, [groupId]);
+  if ((countRes.rows[0]?.total || 0) <= 1) {
+    throw planningError('El grupo debe conservar al menos un miembro.', 409);
+  }
+
+  if (isBus) {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+    const activeTrips = await client.query(
+      `SELECT id FROM programacion_viajes
+       WHERE bus_id=$1 AND grupo_buses_id=$2 AND fecha_viaje >= $3 AND estado <> 'CANCELADO'
+       LIMIT 1`,
+      [memberId, groupId, today]
+    );
+    if (activeTrips.rows.length) {
+      throw planningError('Este bus tiene viajes programados a futuro en este grupo. Reemplázalo en la matriz antes de retirarlo.', 409);
+    }
+  }
+
+  const del = await client.query(
+    `DELETE FROM ${memberTable} WHERE grupo_id=$1 AND ${col}=$2 RETURNING ${col}`,
+    [groupId, memberId]
+  );
+  if (!del.rows.length) throw planningError('El miembro no pertenece a este grupo.', 404);
+  return { grupo_id: groupId, eliminado: memberId };
+}
+
 async function linkGroups(client, cooperativeId, data) {
   const busesId = positiveId(data.grupo_buses_id);
   const frequenciesId = positiveId(data.grupo_frecuencias_id);
@@ -68,31 +213,95 @@ async function matrix(client, cooperativeId, data) {
   const dates = dateRange(data.desde, data.hasta);
   const busGroupId = positiveId(data.grupo_buses_id);
   const frequencyGroupId = positiveId(data.grupo_frecuencias_id);
-  const context = await client.query(`SELECT b.*, b.inicio_ciclo::text AS inicio_ciclo
-    FROM grupos_buses b JOIN grupo_vinculos v ON v.grupo_buses_id=b.id
-    JOIN grupos_frecuencias f ON f.id=v.grupo_frecuencias_id
-    WHERE b.id=$1 AND f.id=$2 AND b.cooperativa_id=$3 AND f.cooperativa_id=$3
-      AND b.tipo_operacion=f.tipo_operacion`, [busGroupId, frequencyGroupId, cooperativeId]);
-  if (!context.rows[0]) throw planningError('Primero vincula grupos compatibles de tu cooperativa.', 403);
-  const buses = (await client.query(`SELECT b.* FROM buses b JOIN grupo_bus_miembros m ON m.bus_id=b.id
-    WHERE m.grupo_id=$1 AND b.cooperativa_id=$2 ORDER BY b.numero_disco,b.id`, [busGroupId, cooperativeId])).rows;
-  const frequencies = (await client.query(`SELECT f.* FROM frecuencias f JOIN grupo_frecuencia_miembros m ON m.frecuencia_id=f.id
-    WHERE m.grupo_id=$1 AND f.cooperativa_id=$2 AND f.activo=TRUE ORDER BY f.hora_salida,f.id`, [frequencyGroupId, cooperativeId])).rows;
-  const trips = (await client.query(`SELECT pv.*, pv.fecha_viaje::text AS fecha_viaje
-    FROM programacion_viajes pv WHERE pv.frecuencia_id=ANY($1::int[])
-      AND pv.fecha_viaje BETWEEN $2 AND $3 AND pv.estado <> 'CANCELADO'
-    ORDER BY pv.fecha_viaje,pv.frecuencia_id,pv.id`, [frequencies.map(f => f.id), data.desde, data.hasta])).rows;
-  const busy = (await client.query(`SELECT pv.id,pv.bus_id,pv.frecuencia_id,pv.fecha_viaje::text AS fecha_viaje
-    FROM programacion_viajes pv WHERE pv.bus_id=ANY($1::int[])
-      AND pv.fecha_viaje BETWEEN $2 AND $3 AND pv.estado <> 'CANCELADO'`, [buses.map(b => b.id), data.desde, data.hasta])).rows;
-  const stops = (await client.query(`SELECT *,fecha::text AS fecha FROM bus_paradas WHERE bus_id=ANY($1::int[])
-    AND fecha BETWEEN $2 AND $3`, [buses.map(b => b.id), data.desde, data.hasta])).rows;
-  const history = (await client.query(`SELECT a.*, u.nombre AS autor, pv.fecha_viaje::text AS fecha_viaje, pv.frecuencia_id
-    FROM auditoria_hojas_ruta a JOIN usuarios u ON u.id=a.usuario_id
-    JOIN programacion_viajes pv ON pv.id=a.programacion_id
-    WHERE pv.frecuencia_id=ANY($1::int[]) AND pv.fecha_viaje BETWEEN $2 AND $3 ORDER BY a.id DESC LIMIT 50`,
-  [frequencies.map(f => f.id), data.desde, data.hasta])).rows;
-  return { fechas: dates, buses, frecuencias: frequencies, viajes: trips, ocupaciones: busy, paradas: stops, historial: history, grupo: context.rows[0] };
+
+  const { rows } = await client.query(`
+    WITH ctx AS (
+      SELECT b.*, b.inicio_ciclo::text AS inicio_ciclo_txt
+      FROM grupos_buses b
+      JOIN grupo_vinculos v ON v.grupo_buses_id = b.id
+      JOIN grupos_frecuencias f ON f.id = v.grupo_frecuencias_id
+      WHERE b.id = $1 AND f.id = $2
+        AND b.cooperativa_id = $3 AND f.cooperativa_id = $3
+        AND b.tipo_operacion = f.tipo_operacion
+      LIMIT 1
+    ),
+    bus_list AS (
+      SELECT b.*
+      FROM buses b
+      JOIN grupo_bus_miembros m ON m.bus_id = b.id
+      WHERE EXISTS (SELECT 1 FROM ctx)
+        AND m.grupo_id = $1 AND b.cooperativa_id = $3
+      ORDER BY b.numero_disco, b.id
+    ),
+    frec_list AS (
+      SELECT f.*
+      FROM frecuencias f
+      JOIN grupo_frecuencia_miembros m ON m.frecuencia_id = f.id
+      WHERE EXISTS (SELECT 1 FROM ctx)
+        AND m.grupo_id = $2 AND f.cooperativa_id = $3 AND f.activo = TRUE
+      ORDER BY f.hora_salida, f.id
+    )
+    SELECT json_build_object(
+      'grupo', (
+        SELECT (to_jsonb(ctx) - 'inicio_ciclo_txt') || jsonb_build_object('inicio_ciclo', ctx.inicio_ciclo_txt)
+        FROM ctx
+      ),
+      'buses', COALESCE((SELECT json_agg(t) FROM bus_list t), '[]'::json),
+      'frecuencias', COALESCE((SELECT json_agg(t) FROM frec_list t), '[]'::json),
+      'viajes', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT pv.*, pv.fecha_viaje::text AS fecha_viaje
+          FROM programacion_viajes pv
+          WHERE pv.frecuencia_id IN (SELECT id FROM frec_list)
+            AND pv.fecha_viaje BETWEEN $4 AND $5
+            AND pv.estado <> 'CANCELADO'
+          ORDER BY pv.fecha_viaje, pv.frecuencia_id, pv.id
+        ) t
+      ), '[]'::json),
+      'ocupaciones', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT pv.id, pv.bus_id, pv.frecuencia_id, pv.fecha_viaje::text AS fecha_viaje
+          FROM programacion_viajes pv
+          WHERE pv.bus_id IN (SELECT id FROM bus_list)
+            AND pv.fecha_viaje BETWEEN $4 AND $5
+            AND pv.estado <> 'CANCELADO'
+        ) t
+      ), '[]'::json),
+      'paradas', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT bp.*, bp.fecha::text AS fecha
+          FROM bus_paradas bp
+          WHERE bp.bus_id IN (SELECT id FROM bus_list)
+            AND bp.fecha BETWEEN $4 AND $5
+        ) t
+      ), '[]'::json),
+      'historial', COALESCE((
+        SELECT json_agg(t) FROM (
+          SELECT a.*, u.nombre AS autor, pv.fecha_viaje::text AS fecha_viaje, pv.frecuencia_id
+          FROM auditoria_hojas_ruta a
+          JOIN usuarios u ON u.id = a.usuario_id
+          JOIN programacion_viajes pv ON pv.id = a.programacion_id
+          WHERE pv.frecuencia_id IN (SELECT id FROM frec_list)
+            AND pv.fecha_viaje BETWEEN $4 AND $5
+          ORDER BY a.id DESC
+          LIMIT 50
+        ) t
+      ), '[]'::json)
+    ) AS payload
+  `, [busGroupId, frequencyGroupId, cooperativeId, data.desde, data.hasta]);
+
+  const payload = rows[0]?.payload;
+  if (!payload?.grupo) throw planningError('Primero vincula grupos compatibles de tu cooperativa.', 403);
+  return {
+    fechas: dates,
+    buses: payload.buses,
+    frecuencias: payload.frecuencias,
+    viajes: payload.viajes,
+    ocupaciones: payload.ocupaciones,
+    paradas: payload.paradas,
+    historial: payload.historial,
+    grupo: payload.grupo
+  };
 }
 
 async function moveTickets(client, tripId, busId) {
@@ -222,4 +431,4 @@ async function saveMatrix(client, cooperativeId, userId, data) {
   return { actualizados: changes.length };
 }
 
-module.exports = { catalog, createGroup, linkGroups, createBranch, matrix, saveMatrix };
+module.exports = { catalog, createGroup, addGroupMembers, removeGroupMember, linkGroups, createBranch, matrix, saveMatrix };

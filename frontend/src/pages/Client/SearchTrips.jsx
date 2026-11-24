@@ -173,7 +173,7 @@ export default function SearchTrips({ onChoose }) {
               </div>
             </div>
           )
-            : <><Suspense fallback={null}><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} /></Suspense><div className="trip-list">{trips.map(trip => {
+            : <><Suspense fallback={null}><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} paradasIntermedias={trips[0]?.paradas_intermedias} /></Suspense><div className="trip-list">{trips.map(trip => {
               const seg = resolveTripSegment(trip, query.origen, query.destino);
               const { itinerary, totalSegments } = seg;
               const custom = customSegments[trip.programacion_id];
@@ -191,9 +191,11 @@ export default function SearchTrips({ onChoose }) {
                   <div className="operator">
                     {trip.logo_url ? (
                       <img
+                        key={`trip-logo-${trip.programacion_id}-${trip.logo_url}`}
                         src={trip.logo_url}
                         alt={`Logo ${trip.cooperativa_nombre}`}
-                        style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'cover', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '2px', flexShrink: 0 }}
+                        style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'contain', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '3px', flexShrink: 0 }}
+                        onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     ) : (
@@ -222,7 +224,7 @@ export default function SearchTrips({ onChoose }) {
                         <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', background: '#F1F5F9', border: '1px solid #CBD5E1', padding: '2px 10px', borderRadius: '6px' }}>
                           🚌 UNIDAD #{trip.numero_disco}
                         </span>
-                        <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos</span>
+                        <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos{trip.bus_layout?.pisos === 2 ? ' · 2 Pisos' : ''}</span>
                         <button type="button" className="inline-link" aria-label={`Ver más del bus ${trip.numero_disco}`} onClick={() => setBusDetalle(trip)}>Ver más</button>
                       </div>
                     </div>

@@ -1,6 +1,6 @@
 // frontend/src/pages/Client/Checkout.jsx
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, ExternalLink, FileUp, Landmark, LockKeyhole, Mail, Plus, ReceiptText, ShieldCheck, Sparkles, UserCheck, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, ExternalLink, FileUp, Landmark, LockKeyhole, Mail, Plus, ReceiptText, ShieldCheck, Sparkles, UserCheck } from 'lucide-react';
 import ReservationTimer from '../../components/ReservationTimer.jsx';
 import CustomerAccount from './CustomerAccount.jsx';
 import { api, isDemo } from '../../lib/api.js';
@@ -472,8 +472,6 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
   const [email, setEmail] = useState(draft?.email || '');
   const [lookupMessages, setLookupMessages] = useState({});
   const [lookingUp, setLookingUp] = useState({});
-  const [accountModal, setAccountModal] = useState(null);
-  const accountDialogRef = useRef(null);
   const lookupControllers = useRef({});
   const automaticLookup = useRef(new Set());
   const [reservation, setReservation] = useState(null);
@@ -481,12 +479,6 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const submitting = useRef(false);
-  useEffect(() => {
-    const dialog = accountDialogRef.current;
-    if (!dialog) return;
-    if (accountModal && !dialog.open) dialog.showModal();
-    if (!accountModal && dialog.open) dialog.close();
-  }, [accountModal]);
   useEffect(() => { onDraftChange?.({ email, passengers }); }, [email, passengers, onDraftChange]);
   useEffect(() => {
     if (!customer) return;
@@ -557,6 +549,11 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
     event.preventDefault();
     if (submitting.current) return;
 
+    if (!customer || !customerToken) {
+      setError('Debes iniciar sesión o crear una cuenta de cliente antes de reservar y comprar tu boleto.');
+      return;
+    }
+
     // Validar datos de pasajeros
     const validation = passengerError(passengers);
     if (validation) {
@@ -595,7 +592,7 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
             precio: getPassengerPrice(seats[i], tipo)
           };
         })
-      });
+      }, customerToken);
 
       if (!result.reserva?.codigo_reserva) {
         throw new Error('No recibimos el código de la reserva. Consulta con la cooperativa antes de reintentar.');
@@ -643,43 +640,33 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
               onUpdate={setReservation}
               onDone={onConsult}
             />
+          ) : !customer || !customerToken ? (
+            <div className="client-checkout-gate">
+              <div className="client-gate-banner" role="status">
+                <LockKeyhole size={18} aria-hidden="true" />
+                <div>
+                  <strong>Inicia sesión o regístrate como cliente para comprar</strong>
+                  <p className="muted" style={{ margin: '0.2rem 0 0' }}>
+                    Necesitas una cuenta de pasajero activa para reservar estos asientos. Al ingresar, tus datos se precargarán automáticamente.
+                  </p>
+                </div>
+              </div>
+              <CustomerAccount
+                compact
+                customer={customer}
+                onSession={onCustomerSession}
+                onLogout={onCustomerLogout}
+                onHistory={onHistory}
+              />
+            </div>
           ) : (
             <form onSubmit={reserve} className="checkout-form">
-              {customer ? (
-                <div className="cr01-checkout-account is-signed-in">
-                  <UserCheck size={18} aria-hidden="true" />
-                  <span>
-                    Sesión activa: <strong>{customer.nombre}</strong> · Tus datos se completaron automáticamente para el Pasajero 1.
-                  </span>
-                </div>
-              ) : (
-                <div className="cr01-checkout-account">
-                  <div>
-                    <strong>¿Quieres guardar tu historial de boletos?</strong>
-                    <p className="muted">
-                      Inicia sesión o regístrate para autocompletar tus datos y consultar tus compras cuando quieras, o continúa como visitante.
-                    </p>
-                  </div>
-                  <div className="cr01-checkout-account-actions">
-                    <button
-                      type="button"
-                      className="button primary"
-                      disabled={busy}
-                      onClick={() => (onCustomerSession ? setAccountModal('login') : onAccount?.())}
-                    >
-                      Entrar a mi cuenta de cliente
-                    </button>
-                    <button
-                      type="button"
-                      className="button secondary"
-                      disabled={busy}
-                      onClick={() => (onCustomerSession ? setAccountModal('register') : onAccount?.())}
-                    >
-                      Crear cuenta
-                    </button>
-                  </div>
-                </div>
-              )}
+              <div className="cr01-checkout-account is-signed-in">
+                <UserCheck size={18} aria-hidden="true" />
+                <span>
+                  Sesión de cliente activa: <strong>{customer.nombre}</strong> · Tus datos se completaron automáticamente para el Pasajero 1.
+                </span>
+              </div>
               {/* Correo de contacto principal */}
               <fieldset className="passenger-fields cr01-email-fieldset">
                 <legend>
@@ -832,33 +819,6 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
           )}
         </aside>
       </div>
-
-      <dialog
-        ref={accountDialogRef}
-        className="cr01-modal"
-        aria-label="Cuenta de cliente"
-        onClose={() => setAccountModal(null)}
-        onCancel={(event) => { event.preventDefault(); setAccountModal(null); }}
-      >
-        <div className="cr01-modal-header">
-          <h2>Mi cuenta de cliente</h2>
-          <button type="button" className="button secondary" aria-label="Cerrar ventana" onClick={() => setAccountModal(null)}>
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
-        {accountModal && (
-          <CustomerAccount
-            key={accountModal}
-            initialRegister={accountModal === 'register'}
-            compact
-            customer={customer}
-            onSession={onCustomerSession}
-            onLogout={onCustomerLogout}
-            onHistory={() => { setAccountModal(null); onHistory?.(); }}
-            onContinue={() => setAccountModal(null)}
-          />
-        )}
-      </dialog>
     </section>
   );
 }

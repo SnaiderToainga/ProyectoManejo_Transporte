@@ -15,9 +15,6 @@ import {
   DollarSign,
   Trash2,
   Edit2,
-  Star,
-  ToggleLeft,
-  ToggleRight,
   Shield,
   Briefcase
 } from 'lucide-react';
@@ -91,14 +88,14 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     patrocinio_fin: ''
   });
 
-  // Formulario nuevo Usuario
+  // Formulario nuevo Usuario (Personal operativo)
   const [modalUsuarioAbierto, setModalUsuarioAbierto] = useState(false);
   const [sucursalesUsuario, setSucursalesUsuario] = useState([]);
   const [formUsuario, setFormUsuario] = useState({
     nombre: '',
     correo: '',
     telefono: '',
-    rol: 'ADMIN_COOP',
+    rol: 'CHOFER',
     cooperativa_id: 1,
     password: ''
   });
@@ -189,9 +186,13 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     const data = await resp.json().catch(() => null);
     if (!resp.ok || !data?.cooperativa?.id) throw new Error(data?.error || 'No se pudo guardar la cooperativa. Intenta nuevamente.');
     setCooperativas(previous => editing
-      ? previous.map(item => Number(item.id) === Number(data.cooperativa.id) ? data.cooperativa : item)
+      ? previous.map(item => Number(item.id) === Number(data.cooperativa.id) ? { ...item, ...data.cooperativa } : item)
       : [data.cooperativa, ...previous]);
-    mostrarAlerta(`Cooperativa "${data.cooperativa.nombre}" ${editing ? 'actualizada' : 'registrada'} correctamente.`);
+    mostrarAlerta(
+      editing
+        ? `Cooperativa "${data.cooperativa.nombre}" actualizada correctamente.`
+        : `Cooperativa "${data.cooperativa.nombre}" registrada y gerente ${data.gerente?.correo || ''} asignado automáticamente.`
+    );
   };
 
   // Manejar eliminación de cooperativa
@@ -211,8 +212,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       setCooperativas(cooperativas.filter(c => c.id !== id));
       mostrarAlerta(`Cooperativa "${nombre}" eliminada correctamente.`);
     } catch (err) {
-      setCooperativas(cooperativas.filter(c => c.id !== id));
-      mostrarAlerta(err.message || `Cooperativa "${nombre}" eliminada.`);
+      mostrarAlerta(err.message || `No se pudo eliminar la cooperativa "${nombre}".`);
     }
   };
 
@@ -226,7 +226,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     });
     const data = await resp.json().catch(() => null);
     if (!resp.ok || !data?.cooperativa?.id) throw new Error(data?.error || "No se pudo guardar la identidad visual.");
-    setCooperativas(previous => previous.map(coop => Number(coop.id) === Number(data.cooperativa.id) ? data.cooperativa : coop));
+    setCooperativas(previous => previous.map(coop => Number(coop.id) === Number(data.cooperativa.id) ? { ...coop, ...data.cooperativa } : coop));
     setModalBrandingAbierto(false);
     mostrarAlerta("Identidad visual actualizada correctamente.");
   };
@@ -286,8 +286,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       setBuses(buses.filter(b => b.id !== id));
       mostrarAlerta(`Bus #${disco} eliminado del sistema.`);
     } catch (err) {
-      setBuses(buses.filter(b => b.id !== id));
-      mostrarAlerta(err.message || `Bus #${disco} eliminado.`);
+      mostrarAlerta(err.message || `No se pudo eliminar el bus #${disco}.`);
     }
   };
 
@@ -358,65 +357,57 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       patrocinio_fin: formFrecuencia.patrocinio_fin || null
     };
 
+    const authHeaders = {
+      'Content-Type': 'application/json',
+      ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {})
+    };
+
     if (frecuenciaEditandoId) {
       // Modo Edición / Actualización
       try {
         const resp = await fetch(`${API_URL}/admin/frecuencias/${frecuenciaEditandoId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify(payloadFrecuencia)
         });
-        const data = await resp.json();
-        if (resp.ok && data.frecuencia) {
-          const coopObj = cooperativas.find(c => c.id === coopTargetId);
-          const frecActualizada = {
-            ...data.frecuencia,
-            cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
-          };
-          setFrecuencias(prev => prev.map(f => f.id === frecuenciaEditandoId ? frecActualizada : f));
-          mostrarAlerta(`Frecuencia "${frecActualizada.resolucion_ant}" actualizada exitosamente.`);
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok || !data?.frecuencia) {
+          throw new Error(data?.error || 'No se pudo actualizar la frecuencia.');
         }
-      } catch {
         const coopObj = cooperativas.find(c => c.id === coopTargetId);
-        setFrecuencias(prev => prev.map(f => f.id === frecuenciaEditandoId ? {
-          ...f,
-          ...payloadFrecuencia,
+        const frecActualizada = {
+          ...data.frecuencia,
           cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
-        } : f));
-        mostrarAlerta(`Frecuencia actualizada (modo local).`);
+        };
+        setFrecuencias(prev => prev.map(f => f.id === frecuenciaEditandoId ? frecActualizada : f));
+        mostrarAlerta(`Frecuencia "${frecActualizada.resolucion_ant}" actualizada exitosamente.`);
+        setFrecuenciaEditandoId(null);
+      } catch (err) {
+        mostrarAlerta(err.message || 'No se pudo actualizar la frecuencia.');
+        return;
       }
-      setFrecuenciaEditandoId(null);
     } else {
       // Modo Creación
       try {
         const resp = await fetch(`${API_URL}/admin/frecuencias`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify(payloadFrecuencia)
         });
-        const data = await resp.json();
-
-        if (resp.ok && data.frecuencia) {
-          const coopObj = cooperativas.find(c => c.id === coopTargetId);
-          const nuevaFrec = {
-            ...data.frecuencia,
-            cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
-          };
-          setFrecuencias([...frecuencias, nuevaFrec]);
-          mostrarAlerta(`Frecuencia "${formFrecuencia.origen} - ${formFrecuencia.destino}" autorizada por ANT.`);
-        } else {
-          throw new Error(data.error);
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok || !data?.frecuencia) {
+          throw new Error(data?.error || 'No se pudo registrar la frecuencia.');
         }
-      } catch {
         const coopObj = cooperativas.find(c => c.id === coopTargetId);
-        const frecSimulada = {
-          id: Date.now(),
-          ...payloadFrecuencia,
-          cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa'),
-          activo: true
+        const nuevaFrec = {
+          ...data.frecuencia,
+          cooperativa_nombre: coopObj ? coopObj.nombre : (isGerente ? coopAsignadaNombre : 'Cooperativa')
         };
-        setFrecuencias([...frecuencias, frecSimulada]);
-        mostrarAlerta(`Frecuencia ANT "${frecSimulada.resolucion_ant}" registrada.`);
+        setFrecuencias([...frecuencias, nuevaFrec]);
+        mostrarAlerta(`Frecuencia "${formFrecuencia.origen} - ${formFrecuencia.destino}" autorizada por ANT.`);
+      } catch (err) {
+        mostrarAlerta(err.message || 'No se pudo registrar la frecuencia.');
+        return;
       }
     }
 
@@ -436,6 +427,14 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     });
   };
 
+  const toLocalDateTimeInput = (val) => {
+    if (!val) return '';
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   // Cargar Frecuencia para Edición
   const handleEditarFrecuenciaClick = (frec) => {
     setFrecuenciaEditandoId(frec.id);
@@ -449,8 +448,8 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       tipo_servicio: frec.tipo_servicio || 'DIRECTO',
       paradas_intermedias: Array.isArray(frec.paradas_intermedias) ? frec.paradas_intermedias.join(', ') : (frec.paradas_intermedias || ''),
       es_destacada: Boolean(frec.es_destacada),
-      patrocinio_inicio: frec.patrocinio_inicio ? new Date(frec.patrocinio_inicio).toISOString().slice(0, 16) : '',
-      patrocinio_fin: frec.patrocinio_fin ? new Date(frec.patrocinio_fin).toISOString().slice(0, 16) : ''
+      patrocinio_inicio: toLocalDateTimeInput(frec.patrocinio_inicio),
+      patrocinio_fin: toLocalDateTimeInput(frec.patrocinio_fin)
     });
     window.scrollTo({ top: 380, behavior: 'smooth' });
   };
@@ -478,16 +477,18 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     try {
       const resp = await fetch(`${API_URL}/admin/frecuencias/${frecId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {})
+        },
         body: JSON.stringify({ es_destacada: nuevoEstado })
       });
-      if (resp.ok) {
-        setFrecuencias(prev => prev.map(f => f.id === frecId ? { ...f, es_destacada: nuevoEstado } : f));
-        mostrarAlerta(nuevoEstado ? '⭐ Ruta marcada como destacada con éxito.' : '🚫 Patrocinio cancelado de inmediato.');
-      }
-    } catch {
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error(data?.error || 'No se pudo actualizar el estado de patrocinio.');
       setFrecuencias(prev => prev.map(f => f.id === frecId ? { ...f, es_destacada: nuevoEstado } : f));
-      mostrarAlerta(nuevoEstado ? '⭐ Ruta destacada en modo local.' : '🚫 Patrocinio cancelado de inmediato (local).');
+      mostrarAlerta(nuevoEstado ? '⭐ Ruta marcada como destacada con éxito.' : '🚫 Patrocinio cancelado de inmediato.');
+    } catch (err) {
+      mostrarAlerta(err.message || 'No se pudo actualizar el patrocinio.');
     }
   };
 
@@ -495,14 +496,16 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
   const handleEliminarFrecuencia = async (id, resolucion) => {
     if (!confirm(`¿Deseas dar de baja la frecuencia oficial ${resolucion}?`)) return;
     try {
-      const resp = await fetch(`${API_URL}/admin/frecuencias/${id}`, { method: 'DELETE' });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
+      const resp = await fetch(`${API_URL}/admin/frecuencias/${id}`, {
+        method: 'DELETE',
+        headers: authUser?.token ? { Authorization: `Bearer ${authUser.token}` } : {}
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error(data?.error || 'No se pudo eliminar la frecuencia.');
       setFrecuencias(frecuencias.filter(f => f.id !== id));
       mostrarAlerta(`Frecuencia ${resolucion} eliminada con éxito.`);
     } catch (err) {
-      setFrecuencias(frecuencias.filter(f => f.id !== id));
-      mostrarAlerta(err.message || `Frecuencia eliminada.`);
+      mostrarAlerta(err.message || 'No se pudo eliminar la frecuencia.');
     }
   };
 
@@ -575,18 +578,21 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
               {isGerente && (
                 bgImage ? (
                   <img
+                    key={`banner-logo-${bgImage}`}
                     src={bgImage}
                     alt={coopAsignadaNombre}
                     style={{
                       width: '135px',
                       height: '100px',
                       borderRadius: '14px',
-                      objectFit: 'cover',
+                      objectFit: 'contain',
+                      padding: '4px',
                       background: '#FFFFFF',
                       border: '3px solid #FFFFFF',
                       boxShadow: '0 8px 20px rgba(0,0,0,0.28)',
                       flexShrink: 0
                     }}
+                    onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 ) : (
@@ -667,10 +673,28 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                 <RefreshCw size={16} />
                 <span>Sincronizar</span>
               </button>
-              {!isGerente && (
-                <button onClick={() => setModalUsuarioAbierto(true)} style={styles.btnSecondary}>
+              {(isSuperAdmin || isGerente) && (
+                <button
+                  onClick={() => {
+                    const defaultCoop = isGerente ? (Number(coopId) || 1) : (Number(cooperativas[0]?.id) || 1);
+                    setFormUsuario(prev => ({
+                      ...prev,
+                      rol: 'CHOFER',
+                      cooperativa_id: defaultCoop,
+                      bus_id: '',
+                      sucursal_id: ''
+                    }));
+                    setModalUsuarioAbierto(true);
+                  }}
+                  style={
+                    isGerente
+                      ? { ...styles.btnSecondary, background: 'rgba(255,255,255,0.95)', color: '#0F172A', border: 'none', fontWeight: 700, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                      : styles.btnSecondary
+                  }
+                  title="Registrar Chofer, Oficinista o personal adicional"
+                >
                   <Users size={16} />
-                  <span>Crear Usuario</span>
+                  <span>Personal (Chofer / Taquilla)</span>
                 </button>
               )}
               <button
@@ -784,7 +808,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       </nav>
 
       {tabActiva === 'planificacion' && <HojaRuta usuario={authUser} />}
-      {tabActiva === 'estructuras' && <BusStructures buses={busesVisibles} user={authUser} />}
+      {tabActiva === 'estructuras' && <BusStructures buses={busesVisibles} user={authUser} onBusStructureUpdated={cargarDatos} />}
 
       {/* ==================================================== */}
       {/* PESTAÑA 1: COOPERATIVAS & BRANDING */}
@@ -805,7 +829,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
             {!isGerente && (
               <button onClick={() => { setCoopEditando(null); setModalNuevaCoopAbierto(true); }} style={styles.btnPrimary}>
                 <Plus size={18} />
-                <span>Nueva Cooperativa</span>
+                <span>Nueva Cooperativa (+ Gerente)</span>
               </button>
             )}
           </div>
@@ -817,19 +841,21 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
                     {coop.logo_url ? (
                       <img
+                        key={`card-logo-${coop.id}-${coop.logo_url}`}
                         src={coop.logo_url}
                         alt={`Logo ${coop.nombre}`}
                         style={{
                           width: '72px',
                           height: '72px',
                           borderRadius: '14px',
-                          objectFit: 'cover',
+                          objectFit: 'contain',
                           backgroundColor: '#FFFFFF',
                           border: `3px solid ${coop.color_distintivo || '#1E40AF'}`,
-                          padding: '3px',
+                          padding: '4px',
                           boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
                           flexShrink: 0
                         }}
+                        onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     ) : (
@@ -861,6 +887,21 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                 </div>
 
                 <div style={styles.coopCardBody}>
+                  <div style={{
+                    background: coop.gerente_correo ? '#F0FDF4' : '#FFFBEB',
+                    border: `1px solid ${coop.gerente_correo ? '#BBF7D0' : '#FDE68A'}`,
+                    borderRadius: '8px',
+                    padding: '0.45rem 0.65rem',
+                    marginBottom: '0.35rem',
+                    fontSize: '0.78rem',
+                    color: coop.gerente_correo ? '#166534' : '#92400E',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.1rem'
+                  }}>
+                    <strong>👤 Gerente: {coop.gerente_nombre || 'Sin asignar'}</strong>
+                    {coop.gerente_correo && <span style={{ opacity: 0.9 }}>{coop.gerente_correo}</span>}
+                  </div>
                   <div style={styles.infoRow}>
                     <span style={styles.infoLabel}>Banco:</span>
                     <span style={styles.infoVal}>{coop.banco || 'Banco Pichincha'}</span>
@@ -1470,17 +1511,19 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           onClose={() => { setModalNuevaCoopAbierto(false); setCoopEditando(null); }}
           onGuardar={handleGuardarNuevaCoop}
           cooperativa={coopEditando}
+          user={authUser}
         />
       )}
 
       {/* Modal de Personalización Branding */}
       {busDetalle && <BusDetails bus={busDetalle} onClose={() => setBusDetalle(null)} />}
       {modalBusAbierto && <BusForm bus={busEditando} cooperativas={cooperativasVisibles} cooperativeId={coopId}
-        isManager={isGerente} onSave={handleGuardarBus} onClose={() => { setModalBusAbierto(false); setBusEditando(null); }} />}
+        isManager={isGerente} user={authUser} onSave={handleGuardarBus} onClose={() => { setModalBusAbierto(false); setBusEditando(null); }} />}
       {modalBrandingAbierto && coopSeleccionadaBranding && (
         <PersonalizacionBranding
           cooperativa={coopSeleccionadaBranding}
           cooperativas={cooperativas}
+          user={authUser}
           onClose={() => {
             setModalBrandingAbierto(false);
             setCoopSeleccionadaBranding(null);
@@ -1489,11 +1532,17 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
         />
       )}
 
-      {/* Modal rápido para Crear Usuario */}
+      {/* Modal rápido para Registrar Personal Operativo */}
       {modalUsuarioAbierto && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
-            <h3 style={{ margin: '0 0 1rem', fontSize: '1.25rem', color: '#0F172A' }}>Registrar Usuario Administrativo</h3>
+            <h3 style={{ margin: '0 0 0.35rem', fontSize: '1.2rem', color: '#0F172A' }}>Registrar Personal Operativo</h3>
+            <p style={{
+              margin: '0 0 0.9rem', fontSize: '0.78rem', color: '#1E3A8A',
+              background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '0.55rem 0.75rem'
+            }}>
+              Los <strong>Gerentes</strong> de cooperativas nuevas se asignan automáticamente dentro de <strong>«Nueva Cooperativa (+ Gerente)»</strong>. Usa este formulario para registrar <strong>Choferes</strong>, <strong>Oficinistas de taquilla</strong> o personal adicional.
+            </p>
             <form onSubmit={handleGuardarUsuario} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div>
                 <label style={styles.formLabel}>Nombre Completo</label>
@@ -1551,7 +1600,9 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   >
                     <option value="">Selecciona la unidad que conducirá</option>
                     {buses
-                      .filter(b => isGerente ? Number(b.cooperativa_id) === Number(coopId) : true)
+                      .filter(b => isGerente
+                        ? Number(b.cooperativa_id) === Number(coopId)
+                        : (!formUsuario.cooperativa_id || Number(b.cooperativa_id) === Number(formUsuario.cooperativa_id)))
                       .map(b => (
                         <option key={b.id} value={b.id}>
                           Bus #{b.numero_disco} — Placa: {b.placa} ({b.capacidad} asientos)
