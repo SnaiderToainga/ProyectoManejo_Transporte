@@ -191,9 +191,11 @@ export default function SearchTrips({ onChoose }) {
                   <div className="operator">
                     {trip.logo_url ? (
                       <img
+                        key={`trip-logo-${trip.programacion_id}-${trip.logo_url}`}
                         src={trip.logo_url}
                         alt={`Logo ${trip.cooperativa_nombre}`}
-                        style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'cover', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '2px', flexShrink: 0 }}
+                        style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'contain', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '3px', flexShrink: 0 }}
+                        onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     ) : (

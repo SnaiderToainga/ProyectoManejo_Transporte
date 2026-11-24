@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import Modal from '../../components/Modal.jsx';
+import ImageUploadControl from '../../components/ImageUploadControl.jsx';
 import BusTemplateDesigner, {
   BUILTIN_BUS_TEMPLATES,
+  adjustCapacityPreservingLayout,
   buildInitialDesign,
   designToApiPayload
 } from '../../components/BusTemplateDesigner.jsx';
@@ -58,10 +61,10 @@ export default function BusForm({ bus, cooperativas, cooperativeId, isManager, u
 
   const change = (key, value) => {
     setForm((previous) => ({ ...previous, [key]: value }));
-    if (key === 'capacidad' && !bus) {
+    if (key === 'capacidad') {
       const cap = parseInt(value, 10);
       if (Number.isInteger(cap) && cap >= 1 && cap <= 100) {
-        setDesign((prev) => buildInitialDesign({ ...prev, capacidad: cap, asientosPersonalizados: null }));
+        setDesign((prev) => adjustCapacityPreservingLayout(prev, cap));
         setDesignDirty(true);
       }
     }
@@ -159,10 +162,93 @@ export default function BusForm({ bus, cooperativas, cooperativeId, isManager, u
               <option value="PARADA">En parada</option>
             </select>
           </label>
-          <label style={{ gridColumn: '1 / -1' }}>
-            Fotografías del bus (una URL por línea)
-            <textarea rows={2} value={form.fotos} onChange={(event) => change('fotos', event.target.value)} />
-          </label>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            <ImageUploadControl
+              user={user}
+              multiple
+              disabled={busy}
+              buttonLabel="Subir fotografías del bus desde tu dispositivo"
+              onUploaded={(urls) => {
+                const current = form.fotos.split('\n').map((v) => v.trim()).filter(Boolean);
+                const merged = [...new Set([...current, ...urls])];
+                change('fotos', merged.join('\n'));
+              }}
+            />
+
+            {(() => {
+              const photoList = form.fotos.split('\n').map((v) => v.trim()).filter(Boolean);
+              if (!photoList.length) return null;
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.55rem' }}>
+                  {photoList.map((url, idx) => (
+                    <div
+                      key={`${url}-${idx}`}
+                      style={{
+                        position: 'relative',
+                        width: '92px',
+                        height: '66px',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        border: '1px solid #CBD5E1',
+                        background: '#F1F5F9',
+                        flexShrink: 0
+                      }}
+                    >
+                      {safeImageUrl(url) ? (
+                        <img
+                          src={url}
+                          alt={`Vista previa foto ${idx + 1}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', color: '#DC2626', padding: '4px', textAlign: 'center' }}>
+                          URL inválida
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        title="Quitar fotografía"
+                        aria-label={`Quitar fotografía ${idx + 1}`}
+                        onClick={() => {
+                          const next = photoList.filter((_, i) => i !== idx);
+                          change('fotos', next.join('\n'));
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: '3px',
+                          right: '3px',
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '999px',
+                          border: 'none',
+                          background: 'rgba(15, 23, 42, 0.78)',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            <label>
+              Fotografías del bus (una URL por línea)
+              <textarea
+                rows={2}
+                placeholder="Pega una o más URLs (una por línea) o sube imágenes desde tu dispositivo arriba"
+                value={form.fotos}
+                onChange={(event) => change('fotos', event.target.value)}
+              />
+            </label>
+          </div>
         </fieldset>
 
         <section className="bus-form-designer-section">

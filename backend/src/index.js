@@ -46,12 +46,21 @@ app.use('/api/planificacion', planningRoutes);
 // Manejo de errores
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
+    const isMediaUpload = req.originalUrl && req.originalUrl.includes('/api/admin/imagenes');
     return res.status(413).json({
-      error: 'El comprobante no puede superar los 5 MB.'
+      error: isMediaUpload
+        ? 'Cada imagen puede pesar como máximo 15 MB.'
+        : 'El comprobante no puede superar los 5 MB.'
     });
   }
 
-  if (err.code === 'INVALID_RECEIPT_TYPE') {
+  if (err.code === 'LIMIT_FILE_COUNT') {
+    return res.status(400).json({
+      error: 'Puedes subir hasta 10 imágenes a la vez.'
+    });
+  }
+
+  if (err.code === 'INVALID_RECEIPT_TYPE' || err.code === 'INVALID_IMAGE_TYPE') {
     return res.status(400).json({
       error: err.message
     });
@@ -60,7 +69,9 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
+const { warmPool } = require('./config/db');
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
+  warmPool(3);
 });

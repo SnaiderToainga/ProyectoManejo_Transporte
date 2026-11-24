@@ -12,8 +12,13 @@ const memory = () => { const values = new Map(); return { setItem: (key, value) 
 test('CR-01: los pasos validan institución, banco y gerente por separado', () => {
   for (let step = 0; step < 3; step++) assert.deepEqual(cooperativeErrors(valid, step), {});
   assert.ok(cooperativeErrors({ ...valid, correo: 'sin-correo' }, 0).correo);
+  // RUC de persona natural con dígito verificador inválido debe detectarse desde Paso 1 (sincronizado con backend)
+  assert.ok(cooperativeErrors({ ...valid, ruc: '1812562348001' }, 0).ruc);
+  assert.equal(cooperativeErrors({ ...valid, ruc: '1812562344001' }, 0).ruc, undefined);
+  assert.equal(cooperativeErrors({ ...valid, ruc: '1891256234001' }, 0).ruc, undefined);
   assert.ok(cooperativeErrors({ ...valid, banco: '', cuenta_bancaria: 'abc' }, 1).banco);
   assert.ok(cooperativeErrors({ ...valid, gerente_cedula: '0102030405' }, 2).gerente_cedula);
+  assert.equal(cooperativeErrors({ ...valid, gerente_cedula: '0202638649' }, 2).gerente_cedula, undefined);
   assert.ok(cooperativeErrors({ ...valid, gerente_password: 'SinSimbolo9' }, 2).gerente_password);
 });
 

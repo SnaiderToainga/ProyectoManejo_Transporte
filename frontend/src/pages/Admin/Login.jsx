@@ -18,20 +18,6 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [error, setError] = useState('');
   const [rolDetectado, setRolDetectado] = useState(null);
 
-  const usuariosPrueba = import.meta.env.DEV ? [
-    { rol: 'SUPERADMIN', correo: 'admin@transporteuta.com', label: 'SuperAdmin General' },
-    { rol: 'ADMIN_COOP', correo: 'gerente@cita.com', label: 'Gerente CITA' },
-    { rol: 'ADMIN_COOP', correo: 'gerente@pelileo.com', label: 'Gerente Pelileo' },
-    { rol: 'OFICINISTA', correo: 'taquilla@transporteuta.com', label: 'Oficinista / Taquilla' },
-    { rol: 'CHOFER', correo: 'chofer.cita15@transporteuta.com', label: '🚍 Chofer Bus #15 (CITA)' }
-  ] : [];
-
-  const handleSeleccionarPrueba = (user) => {
-    setCorreo(user.correo);
-    setPassword(user.rol === 'CHOFER' ? 'Chofer2026*' : 'Admin2026*');
-    setError('');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!correo.trim() || !password.trim()) {
@@ -58,21 +44,16 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
       setRolDetectado(data.usuario.rol);
       localStorage.setItem('transporte_auth', JSON.stringify(data.usuario));
 
-      setTimeout(() => {
-        if (data.usuario.rol === 'OFICINISTA') {
-          // Redirigir al módulo de Taquilla de Daky
-          window.location.hash = 'oficina';
-          if (onLoginSuccess) onLoginSuccess(data.usuario, '/oficina');
-        } else if (data.usuario.rol === 'CHOFER') {
-          // Redirigir a la Cabina del Chofer
-          window.location.hash = 'chofer';
-          if (onLoginSuccess) onLoginSuccess(data.usuario, '/chofer');
-        } else {
-          // SuperAdmin o Administrador de Cooperativa
-          window.location.hash = 'admin';
-          if (onLoginSuccess) onLoginSuccess(data.usuario, '/admin');
-        }
-      }, 700);
+      if (data.usuario.rol === 'OFICINISTA') {
+        window.location.hash = 'oficina';
+        if (onLoginSuccess) onLoginSuccess(data.usuario, '/oficina');
+      } else if (data.usuario.rol === 'CHOFER') {
+        window.location.hash = 'chofer';
+        if (onLoginSuccess) onLoginSuccess(data.usuario, '/chofer');
+      } else {
+        window.location.hash = 'admin';
+        if (onLoginSuccess) onLoginSuccess(data.usuario, '/admin');
+      }
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión');
     } finally {
@@ -164,23 +145,6 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
             )}
           </button>
         </form>
-
-        {usuariosPrueba.length > 0 && <div style={styles.quickAccessSection}>
-          <p style={styles.quickAccessTitle}>Cuentas de prueba (ingresa su contraseña):</p>
-          <div style={styles.quickAccessButtons}>
-            {usuariosPrueba.map((u) => (
-              <button
-                key={u.correo}
-                type="button"
-                onClick={() => handleSeleccionarPrueba(u)}
-                style={styles.quickBtn}
-              >
-                <strong>{u.rol}</strong>
-                <span style={{ fontSize: '0.75rem', color: '#64748B' }}>{u.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>}
 
         <div style={styles.footerLink}>
           <a href="#" onClick={(e) => { e.preventDefault(); window.location.hash = 'buscar'; }} style={styles.backLink}>
@@ -315,37 +279,6 @@ const styles = {
     border: 'none',
     marginTop: '0.5rem',
     boxShadow: '0 4px 6px -1px rgba(30, 64, 175, 0.2)'
-  },
-  quickAccessSection: {
-    marginTop: '1.75rem',
-    paddingTop: '1.25rem',
-    borderTop: '1px solid #E2E8F0'
-  },
-  quickAccessTitle: {
-    fontSize: '0.75rem',
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: '0.5rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.025em'
-  },
-  quickAccessButtons: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '0.5rem'
-  },
-  quickBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '0.5rem',
-    backgroundColor: '#F8FAFC',
-    border: '1px solid #CBD5E1',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.75rem',
-    color: '#1E293B',
-    textAlign: 'center'
   },
   footerLink: {
     marginTop: '1.25rem',

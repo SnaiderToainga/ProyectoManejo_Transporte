@@ -3,8 +3,7 @@ import jsQR from 'jsqr';
 import { shortTime, today } from '../../lib/format.js';
 import { 
   Bus, QrCode, CheckCircle2, AlertTriangle, XCircle, Play, CheckCheck, 
-  RefreshCw, Users, Shield, ArrowRight, UserCheck, PhoneCall, Volume2, 
-  VolumeX, Camera, ChevronRight, Clock, MapPin, Search, Upload, LogOut
+  RefreshCw, Volume2, VolumeX, Camera, Search, Upload, LogOut
 } from 'lucide-react';
 
 const getApiBase = () => {

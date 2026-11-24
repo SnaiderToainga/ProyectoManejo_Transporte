@@ -15,9 +15,6 @@ import {
   DollarSign,
   Trash2,
   Edit2,
-  Star,
-  ToggleLeft,
-  ToggleRight,
   Shield,
   Briefcase
 } from 'lucide-react';
@@ -215,8 +212,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       setCooperativas(cooperativas.filter(c => c.id !== id));
       mostrarAlerta(`Cooperativa "${nombre}" eliminada correctamente.`);
     } catch (err) {
-      setCooperativas(cooperativas.filter(c => c.id !== id));
-      mostrarAlerta(err.message || `Cooperativa "${nombre}" eliminada.`);
+      mostrarAlerta(err.message || `No se pudo eliminar la cooperativa "${nombre}".`);
     }
   };
 
@@ -230,7 +226,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
     });
     const data = await resp.json().catch(() => null);
     if (!resp.ok || !data?.cooperativa?.id) throw new Error(data?.error || "No se pudo guardar la identidad visual.");
-    setCooperativas(previous => previous.map(coop => Number(coop.id) === Number(data.cooperativa.id) ? data.cooperativa : coop));
+    setCooperativas(previous => previous.map(coop => Number(coop.id) === Number(data.cooperativa.id) ? { ...coop, ...data.cooperativa } : coop));
     setModalBrandingAbierto(false);
     mostrarAlerta("Identidad visual actualizada correctamente.");
   };
@@ -290,8 +286,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
       setBuses(buses.filter(b => b.id !== id));
       mostrarAlerta(`Bus #${disco} eliminado del sistema.`);
     } catch (err) {
-      setBuses(buses.filter(b => b.id !== id));
-      mostrarAlerta(err.message || `Bus #${disco} eliminado.`);
+      mostrarAlerta(err.message || `No se pudo eliminar el bus #${disco}.`);
     }
   };
 
@@ -583,18 +578,21 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
               {isGerente && (
                 bgImage ? (
                   <img
+                    key={`banner-logo-${bgImage}`}
                     src={bgImage}
                     alt={coopAsignadaNombre}
                     style={{
                       width: '135px',
                       height: '100px',
                       borderRadius: '14px',
-                      objectFit: 'cover',
+                      objectFit: 'contain',
+                      padding: '4px',
                       background: '#FFFFFF',
                       border: '3px solid #FFFFFF',
                       boxShadow: '0 8px 20px rgba(0,0,0,0.28)',
                       flexShrink: 0
                     }}
+                    onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 ) : (
@@ -843,19 +841,21 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
                     {coop.logo_url ? (
                       <img
+                        key={`card-logo-${coop.id}-${coop.logo_url}`}
                         src={coop.logo_url}
                         alt={`Logo ${coop.nombre}`}
                         style={{
                           width: '72px',
                           height: '72px',
                           borderRadius: '14px',
-                          objectFit: 'cover',
+                          objectFit: 'contain',
                           backgroundColor: '#FFFFFF',
                           border: `3px solid ${coop.color_distintivo || '#1E40AF'}`,
-                          padding: '3px',
+                          padding: '4px',
                           boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
                           flexShrink: 0
                         }}
+                        onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     ) : (
@@ -1511,6 +1511,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           onClose={() => { setModalNuevaCoopAbierto(false); setCoopEditando(null); }}
           onGuardar={handleGuardarNuevaCoop}
           cooperativa={coopEditando}
+          user={authUser}
         />
       )}
 
@@ -1522,6 +1523,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
         <PersonalizacionBranding
           cooperativa={coopSeleccionadaBranding}
           cooperativas={cooperativas}
+          user={authUser}
           onClose={() => {
             setModalBrandingAbierto(false);
             setCoopSeleccionadaBranding(null);

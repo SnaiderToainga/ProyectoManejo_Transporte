@@ -1,279 +1,66 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Armchair,
   ArrowUpDown,
   Bath,
-  Ban,
   CircleGauge,
   Crown,
   DoorOpen,
+  GripVertical,
+  Hash,
   Layers,
+  Minus,
   Move,
   Plus,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  Trash2,
+  Undo2
 } from 'lucide-react';
 import { aisleAfterColumn, gridColumnForLogical } from '../lib/seats.js';
+import {
+  BUILTIN_BUS_TEMPLATES,
+  adjustCapacityPreservingLayout,
+  applyCellOperation,
+  applyFirstRowBus17,
+  buildInitialDesign,
+  coordKey,
+  deleteEmptyRow,
+  designToApiPayload,
+  floorOf,
+  generateSeatsFromDesign,
+  moveOrSwapCell,
+  renumberSeats,
+  rowOf,
+  sanitizeDesign,
+  switchDesignFloors
+} from '../lib/busLayoutEngine.js';
 
-export const BUILTIN_BUS_TEMPLATES = [
-  {
-    id: 'tpl-estandar-40',
-    nombre: 'Estándar 40 (1 Piso + Baño posterior)',
-    descripcion: 'Bus interprovincial clásico 2+2 con fila delantera VIP amplia y baño WC posterior compensado.',
-    es_sistema: true,
-    pisos: 1,
-    capacidad: 40,
-    capacidad_piso1: 40,
-    columnas: 4,
-    columnas_piso2: 4,
-    pasillo_despues_col: 2,
-    pasillo_despues_col_piso2: 2,
-    celdasBano: [{ piso: 1, fila: 10, columna: 4 }],
-    celdasBloqueadas: [],
-    asientosVip: [1, 2, 3, 4],
-    asientosGrandes: [1, 2, 3, 4],
-    asientosPersonalizados: null
-  },
-  {
-    id: 'tpl-continuo-41',
-    nombre: 'Continuo 41 (1 Piso sin baño)',
-    descripcion: 'Distribución clásica de 41 plazas continuas sin baño, con primera fila VIP.',
-    es_sistema: true,
-    pisos: 1,
-    capacidad: 41,
-    capacidad_piso1: 41,
-    columnas: 4,
-    columnas_piso2: 4,
-    pasillo_despues_col: 2,
-    pasillo_despues_col_piso2: 2,
-    celdasBano: [],
-    celdasBloqueadas: [],
-    asientosVip: [1, 2, 3, 4],
-    asientosGrandes: [1, 2, 3, 4],
-    asientosPersonalizados: null
-  },
-  {
-    id: 'tpl-ejecutivo-vip-30',
-    nombre: 'Ejecutivo VIP 30 (1 Piso 2+1 · Asientos VIP Grandes)',
-    descripcion: 'Configuración 2+1 espaciosa con 12 asientos VIP grandes tipo cama al frente, puerta y baño posterior.',
-    es_sistema: true,
-    pisos: 1,
-    capacidad: 30,
-    capacidad_piso1: 30,
-    columnas: 3,
-    columnas_piso2: 3,
-    pasillo_despues_col: 2,
-    pasillo_despues_col_piso2: 2,
-    celdasBano: [{ piso: 1, fila: 11, columna: 3 }],
-    celdasBloqueadas: [{ piso: 1, fila: 1, columna: 3, tipo: 'PUERTA' }],
-    asientosVip: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    asientosGrandes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    asientosPersonalizados: null
-  },
-  {
-    id: 'tpl-doble-piso-56',
-    nombre: 'Doble Piso 56 (Piso 1 Salón VIP Grande + Piso 2 Panorámico)',
-    descripcion: 'Piso 1 con 16 asientos VIP grandes (2+1), escalera y baño WC; Piso 2 panorámico con 40 asientos (2+2).',
-    es_sistema: true,
-    pisos: 2,
-    capacidad: 56,
-    capacidad_piso1: 16,
-    columnas: 3,
-    columnas_piso2: 4,
-    pasillo_despues_col: 2,
-    pasillo_despues_col_piso2: 2,
-    celdasBano: [{ piso: 1, fila: 6, columna: 3 }],
-    celdasBloqueadas: [
-      { piso: 1, fila: 1, columna: 3, tipo: 'PUERTA' },
-      { piso: 1, fila: 5, columna: 3, tipo: 'ESCALERA' },
-      { piso: 2, fila: 5, columna: 3, tipo: 'ESCALERA' },
-      { piso: 2, fila: 5, columna: 4, tipo: 'ESCALERA' }
-    ],
-    asientosVip: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-    asientosGrandes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-    asientosPersonalizados: null
-  },
-  {
-    id: 'tpl-minibus-24',
-    nombre: 'MiniBus 24 (1 Piso · Fila 1 con 1 asiento + compensación)',
-    descripcion: 'Unidad compacta de 24 asientos con 3 posiciones bloqueadas en fila 1 compensadas atrás.',
-    es_sistema: true,
-    pisos: 1,
-    capacidad: 24,
-    capacidad_piso1: 24,
-    columnas: 4,
-    columnas_piso2: 4,
-    pasillo_despues_col: 2,
-    pasillo_despues_col_piso2: 2,
-    celdasBano: [],
-    celdasBloqueadas: [
-      { piso: 1, fila: 1, columna: 2, tipo: 'BLOQUEADO' },
-      { piso: 1, fila: 1, columna: 3, tipo: 'PUERTA' },
-      { piso: 1, fila: 1, columna: 4, tipo: 'PUERTA' }
-    ],
-    asientosVip: [1],
-    asientosGrandes: [1],
-    asientosPersonalizados: null
-  }
-];
-
-function coordKey(piso, fila, columna) {
-  return `${piso}-${fila}-${columna}`;
-}
-
-export function generateSeatsFromDesign(design) {
-  const numCap = Math.max(1, Math.min(100, parseInt(design.capacidad, 10) || 40));
-  const numPisos = Number(design.pisos) === 2 ? 2 : 1;
-  const colsP1 = Math.max(2, Math.min(5, parseInt(design.columnas, 10) || 4));
-  const colsP2 = Math.max(2, Math.min(5, parseInt(design.columnas_piso2, 10) || 4));
-
-  const baths = Array.isArray(design.celdasBano) ? design.celdasBano : [];
-  const blocked = Array.isArray(design.celdasBloqueadas) ? design.celdasBloqueadas : [];
-  const bathSet = new Set(baths.map((c) => coordKey(c.piso || 1, c.fila, c.columna)));
-  const blockedSet = new Set(blocked.map((c) => coordKey(c.piso || 1, c.fila, c.columna)));
-
-  const vipSet = Array.isArray(design.asientosVip) ? new Set(design.asientosVip.map(Number)) : null;
-  const largeSet = Array.isArray(design.asientosGrandes) ? new Set(design.asientosGrandes.map(Number)) : null;
-
-  let capP1 = numCap;
-  let capP2 = 0;
-  if (numPisos === 2) {
-    const parsedP1 = parseInt(design.capacidad_piso1, 10);
-    capP1 = Number.isInteger(parsedP1) && parsedP1 >= 1 && parsedP1 < numCap
-      ? parsedP1
-      : Math.max(1, Math.min(numCap - 1, Math.round(numCap * 0.32)));
-    capP2 = numCap - capP1;
-  }
-
-  const seats = [];
-  let num = 1;
-
-  function fill(piso, target, cols) {
-    let count = 0;
-    let fila = 1;
-    while (count < target && fila <= 40) {
-      for (let col = 1; col <= cols; col++) {
-        if (count >= target) break;
-        const key = coordKey(piso, fila, col);
-        if (bathSet.has(key) || blockedSet.has(key)) continue;
-        const isVip = vipSet ? vipSet.has(num) : (numPisos === 2 ? piso === 1 : num <= 4);
-        const isLarge = largeSet ? largeSet.has(num) : isVip;
-        seats.push({
-          numero_asiento: num,
-          piso,
-          fila_piso: fila,
-          fila,
-          columna: col,
-          categoria: isVip ? 'VIP' : 'NORMAL',
-          tamano: isLarge ? 'GRANDE' : 'NORMAL'
-        });
-        num++;
-        count++;
-      }
-      fila++;
-    }
-  }
-
-  fill(1, capP1, colsP1);
-  if (numPisos === 2) fill(2, capP2, colsP2);
-  return seats;
-}
-
-export function buildInitialDesign(templateOrLayout, existingSeats = null) {
-  const base = templateOrLayout || BUILTIN_BUS_TEMPLATES[0];
-  const pisos = Number(base.pisos) === 2 ? 2 : 1;
-  const columnas = Number(base.columnas) || 4;
-  const columnas_piso2 = Number(base.columnas_piso2) || (pisos === 2 ? 4 : columnas);
-  const celdasBano = Array.isArray(base.celdasBano) ? base.celdasBano.map((c) => ({ piso: Number(c.piso) === 2 ? 2 : 1, fila: Number(c.fila), columna: Number(c.columna) })) : [];
-  const celdasBloqueadas = Array.isArray(base.celdasBloqueadas) ? base.celdasBloqueadas.map((c) => ({ piso: Number(c.piso) === 2 ? 2 : 1, fila: Number(c.fila), columna: Number(c.columna), tipo: c.tipo || 'BLOQUEADO' })) : [];
-
-  let seats;
-  if (Array.isArray(existingSeats) && existingSeats.length > 0 && existingSeats.some((s) => s.fila && s.columna)) {
-    seats = existingSeats.map((s) => ({
-      numero_asiento: Number(s.numero_asiento),
-      piso: Number(s.piso) === 2 ? 2 : 1,
-      fila_piso: Number(s.fila_piso || s.fila),
-      fila: Number(s.fila_piso || s.fila),
-      columna: Number(s.columna),
-      categoria: String(s.categoria || 'NORMAL').toUpperCase() === 'VIP' ? 'VIP' : 'NORMAL',
-      tamano: String(s.tamano || (String(s.categoria || '').toUpperCase() === 'VIP' ? 'GRANDE' : 'NORMAL')).toUpperCase() === 'GRANDE' ? 'GRANDE' : 'NORMAL'
-    }));
-  } else if (Array.isArray(base.asientosPersonalizados) && base.asientosPersonalizados.length > 0) {
-    seats = base.asientosPersonalizados.map((s) => ({
-      numero_asiento: Number(s.numero_asiento),
-      piso: Number(s.piso) === 2 ? 2 : 1,
-      fila_piso: Number(s.fila_piso || s.fila),
-      fila: Number(s.fila_piso || s.fila),
-      columna: Number(s.columna),
-      categoria: String(s.categoria || 'NORMAL').toUpperCase() === 'VIP' ? 'VIP' : 'NORMAL',
-      tamano: String(s.tamano || (String(s.categoria || '').toUpperCase() === 'VIP' ? 'GRANDE' : 'NORMAL')).toUpperCase() === 'GRANDE' ? 'GRANDE' : 'NORMAL'
-    }));
-  } else {
-    seats = generateSeatsFromDesign(base);
-  }
-
-  return {
-    plantilla_id: base.id || base.plantilla_id || null,
-    plantilla_nombre: base.nombre || base.plantilla_nombre || 'Personalizada',
-    pisos,
-    capacidad: seats.length,
-    capacidad_piso1: seats.filter((s) => s.piso === 1).length || Math.min(seats.length, Number(base.capacidad_piso1) || seats.length),
-    columnas,
-    columnas_piso2,
-    pasillo_despues_col: aisleAfterColumn(columnas, base.pasillo_despues_col),
-    pasillo_despues_col_piso2: aisleAfterColumn(columnas_piso2, base.pasillo_despues_col_piso2),
-    celdasBano,
-    celdasBloqueadas,
-    asientos: seats,
-    extraRowsP1: 0,
-    extraRowsP2: 0
-  };
-}
-
-export function designToApiPayload(design) {
-  const asientos = (design.asientos || []).map((s) => ({
-    numero_asiento: Number(s.numero_asiento),
-    piso: Number(s.piso) === 2 ? 2 : 1,
-    fila_piso: Number(s.fila_piso || s.fila),
-    columna: Number(s.columna),
-    categoria: s.categoria === 'VIP' ? 'VIP' : 'NORMAL',
-    tamano: s.tamano === 'GRANDE' ? 'GRANDE' : 'NORMAL'
-  }));
-  return {
-    plantilla_id: design.plantilla_id || null,
-    plantilla_nombre: design.plantilla_nombre || 'Estructura personalizada',
-    pisos: design.pisos,
-    capacidad: asientos.length,
-    capacidad_piso1: asientos.filter((a) => a.piso === 1).length,
-    columnas: design.columnas,
-    columnas_piso2: design.columnas_piso2,
-    pasillo_despues_col: design.pasillo_despues_col,
-    pasillo_despues_col_piso2: design.pasillo_despues_col_piso2,
-    celdasBano: design.celdasBano || [],
-    celdasBloqueadas: design.celdasBloqueadas || [],
-    asientosVip: asientos.filter((a) => a.categoria === 'VIP').map((a) => a.numero_asiento),
-    asientosGrandes: asientos.filter((a) => a.tamano === 'GRANDE').map((a) => a.numero_asiento),
-    asientosPersonalizados: asientos,
-    tiene_bano_posterior: (design.celdasBano || []).length > 0
-  };
-}
+export {
+  BUILTIN_BUS_TEMPLATES,
+  adjustCapacityPreservingLayout,
+  buildInitialDesign,
+  designToApiPayload,
+  generateSeatsFromDesign
+};
 
 function buildEditorGridTemplate(cols, aisleAfter, wideVipFloor) {
-  const parts = [];
+  const parts = ['26px'];
   for (let c = 1; c <= cols; c++) {
-    parts.push(wideVipFloor ? 'minmax(62px, 1.25fr)' : 'minmax(50px, 1fr)');
-    if (c === aisleAfter) parts.push('minmax(20px, 0.42fr)');
+    parts.push(wideVipFloor ? 'minmax(60px, 1.25fr)' : 'minmax(48px, 1fr)');
+    if (c === aisleAfter) parts.push('minmax(18px, 0.38fr)');
   }
+  parts.push('30px');
   return parts.join(' ');
 }
 
 const TOOLS = [
-  { id: 'vip', label: 'VIP Grande', hint: 'Marca/crea asiento VIP amplio', icon: Crown },
-  { id: 'normal', label: 'Normal', hint: 'Coloca asiento estándar', icon: Armchair },
-  { id: 'mover', label: 'Mover / Intercambiar', hint: 'Clic en origen y luego en destino', icon: Move },
-  { id: 'bano', label: 'Baño WC', hint: 'Coloca o quita baño', icon: Bath },
-  { id: 'puerta', label: 'Puerta / Escalera', hint: 'Acceso o escalera entre pisos', icon: DoorOpen },
-  { id: 'bloquear', label: 'Quitar / Bloquear', hint: 'Libera espacio (compensa atrás)', icon: Ban }
+  { id: 'vip', label: 'VIP Grande', hint: 'Alterna VIP ↔ Normal o crea asiento VIP en celda vacía', icon: Crown, tone: 'vip' },
+  { id: 'normal', label: 'Normal', hint: 'Coloca asiento normal o quita VIP', icon: Armchair, tone: 'default' },
+  { id: 'mover', label: 'Mover / Intercambiar', hint: 'Haz clic en origen y luego en destino para mover o intercambiar', icon: Move, tone: 'default' },
+  { id: 'bano', label: 'Baño WC', hint: 'Coloca o quita baño (auto-compensa al final si está activo)', icon: Bath, tone: 'default' },
+  { id: 'puerta', label: 'Puerta / Escalera', hint: 'Coloca acceso o escalera entre pisos', icon: DoorOpen, tone: 'default' },
+  { id: 'borrar', label: 'Eliminar', hint: 'Elimina el asiento o elemento sin mover los demás', icon: Trash2, tone: 'danger' }
 ];
 
 export default function BusTemplateDesigner({
@@ -285,319 +72,226 @@ export default function BusTemplateDesigner({
   const [tool, setTool] = useState('vip');
   const [autoCompensate, setAutoCompensate] = useState(true);
   const [moveSource, setMoveSource] = useState(null);
+  const [dragSource, setDragSource] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState('');
+  const [statusNote, setStatusNote] = useState('');
+  const [history, setHistory] = useState([]);
 
   const templateList = templates && templates.length > 0 ? templates : BUILTIN_BUS_TEMPLATES;
-  const design = value || buildInitialDesign(templateList[0]);
+  const design = useMemo(() => sanitizeDesign(value || buildInitialDesign(templateList[0])), [value, templateList]);
+
+  const [capInput, setCapInput] = useState(String(design.capacidad || 40));
+  const [capP1Input, setCapP1Input] = useState(String(design.capacidad_piso1 || 16));
+  const noteTimerRef = useRef(null);
+
+  useEffect(() => {
+    setCapInput(String(design.capacidad || 1));
+    setCapP1Input(String(design.capacidad_piso1 || 1));
+  }, [design.capacidad, design.capacidad_piso1]);
 
   useEffect(() => {
     setMoveSource(null);
   }, [tool, design.pisos]);
 
+  useEffect(() => () => {
+    if (noteTimerRef.current) clearTimeout(noteTimerRef.current);
+  }, []);
+
+  function flashNote(text) {
+    setStatusNote(text || '');
+    if (noteTimerRef.current) clearTimeout(noteTimerRef.current);
+    if (text) {
+      noteTimerRef.current = setTimeout(() => setStatusNote(''), 4200);
+    }
+  }
+
+  function commit(nextDesign, note = '') {
+    setHistory((prev) => [...prev.slice(-24), design]);
+    onChange?.(nextDesign);
+    if (note) flashNote(note);
+  }
+
+  function handleUndo() {
+    if (!history.length) return;
+    const previous = history[history.length - 1];
+    setHistory((prev) => prev.slice(0, -1));
+    setMoveSource(null);
+    onChange?.(previous);
+    flashNote('Cambio deshecho.');
+  }
+
   const stats = useMemo(() => {
     const seats = design.asientos || [];
     const vip = seats.filter((s) => s.categoria === 'VIP').length;
-    const large = seats.filter((s) => s.tamano === 'GRANDE').length;
-    const p1 = seats.filter((s) => (Number(s.piso) === 2 ? 2 : 1) === 1).length;
-    const p2 = seats.filter((s) => Number(s.piso) === 2).length;
+    const p1 = seats.filter((s) => floorOf(s) === 1).length;
+    const p2 = seats.filter((s) => floorOf(s) === 2).length;
     return {
       total: seats.length,
       vip,
       normal: seats.length - vip,
-      large,
       p1,
       p2,
       baths: (design.celdasBano || []).length,
-      blocked: (design.celdasBloqueadas || []).length
+      doors: (design.celdasBloqueadas || []).length
     };
   }, [design]);
-
-  function emit(next) {
-    onChange?.(next);
-  }
 
   function applyTemplate(tplId) {
     const found = templateList.find((t) => t.id === tplId);
     if (!found) return;
     setMoveSource(null);
-    emit(buildInitialDesign(found));
+    commit(buildInitialDesign(found), `Plantilla "${found.nombre}" cargada.`);
   }
 
-  function regenerateWithCompensation(partial) {
-    const merged = { ...design, ...partial };
-    const existingVipNums = (merged.asientos || []).filter((s) => s.categoria === 'VIP').map((s) => s.numero_asiento);
-    const existingLargeNums = (merged.asientos || []).filter((s) => s.tamano === 'GRANDE').map((s) => s.numero_asiento);
+  function handleCapacityCommit(rawValue) {
+    const parsed = parseInt(rawValue, 10);
+    if (!Number.isInteger(parsed)) {
+      setCapInput(String(design.capacidad));
+      return;
+    }
+    const clamped = Math.max(1, Math.min(100, parsed));
+    setCapInput(String(clamped));
+    if (clamped === design.capacidad) return;
+    commit(
+      adjustCapacityPreservingLayout(design, clamped),
+      `Capacidad ajustada a ${clamped} asientos conservando tu diseño.`
+    );
+  }
+
+  function handleP1CapacityCommit(rawValue) {
+    const parsed = parseInt(rawValue, 10);
+    if (!Number.isInteger(parsed)) {
+      setCapP1Input(String(design.capacidad_piso1));
+      return;
+    }
+    const clampedP1 = Math.max(1, Math.min(Math.max(1, design.capacidad - 1), parsed));
+    setCapP1Input(String(clampedP1));
+    if (clampedP1 === design.capacidad_piso1) return;
+    const merged = { ...design, capacidad_piso1: clampedP1 };
     const nextSeats = generateSeatsFromDesign({
       ...merged,
-      asientosVip: partial.asientosVip !== undefined ? partial.asientosVip : existingVipNums,
-      asientosGrandes: partial.asientosGrandes !== undefined ? partial.asientosGrandes : existingLargeNums
+      asientosVip: (design.asientos || []).filter((s) => s.categoria === 'VIP').map((s) => s.numero_asiento),
+      asientosGrandes: (design.asientos || []).filter((s) => s.tamano === 'GRANDE').map((s) => s.numero_asiento)
     });
-    emit({
+    commit({
       ...merged,
       capacidad: nextSeats.length,
-      capacidad_piso1: nextSeats.filter((s) => s.piso === 1).length,
-      asientos: nextSeats
-    });
-  }
-
-  function handleCapacityChange(rawValue) {
-    const cap = Math.max(1, Math.min(100, parseInt(rawValue, 10) || 1));
-    const capP1 = design.pisos === 2
-      ? Math.max(1, Math.min(cap - 1, Number(design.capacidad_piso1) || Math.round(cap * 0.32)))
-      : cap;
-    regenerateWithCompensation({ capacidad: cap, capacidad_piso1: capP1 });
+      capacidad_piso1: nextSeats.filter((s) => floorOf(s) === 1).length,
+      asientos: nextSeats,
+      extraRowsP1: 0,
+      extraRowsP2: 0
+    }, `Piso 1 ajustado a ${clampedP1} plazas.`);
   }
 
   function handleFloorsChange(nextPisos) {
     const p = Number(nextPisos) === 2 ? 2 : 1;
     if (p === design.pisos) return;
-    if (p === 2) {
-      const cap = Math.max(12, design.capacidad < 20 ? 48 : design.capacidad);
-      const capP1 = Math.max(4, Math.min(cap - 4, Math.round(cap * 0.3)));
-      const vipP1 = Array.from({ length: capP1 }, (_, i) => i + 1);
-      regenerateWithCompensation({
-        pisos: 2,
-        capacidad: cap,
-        capacidad_piso1: capP1,
-        columnas: 3,
-        columnas_piso2: 4,
-        pasillo_despues_col: 2,
-        pasillo_despues_col_piso2: 2,
-        asientosVip: vipP1,
-        asientosGrandes: vipP1,
-        plantilla_nombre: `${design.plantilla_nombre || 'Estructura'} (2 Pisos)`
-      });
-    } else {
-      const cleanedBaths = (design.celdasBano || []).filter((c) => Number(c.piso) !== 2);
-      const cleanedBlocked = (design.celdasBloqueadas || []).filter((c) => Number(c.piso) !== 2);
-      regenerateWithCompensation({
-        pisos: 1,
-        capacidad_piso1: design.capacidad,
-        columnas: 4,
-        pasillo_despues_col: 2,
-        celdasBano: cleanedBaths,
-        celdasBloqueadas: cleanedBlocked,
-        asientosVip: [1, 2, 3, 4],
-        asientosGrandes: [1, 2, 3, 4]
-      });
-    }
+    const next = switchDesignFloors(design, p);
+    commit(next, p === 2 ? 'Estructura convertida a 2 pisos.' : 'Estructura convertida a 1 piso.');
   }
 
   function handleColsChange(piso, rawCols) {
     const c = Math.max(2, Math.min(5, parseInt(rawCols, 10) || 4));
     const field = piso === 2 ? 'columnas_piso2' : 'columnas';
     const aisleField = piso === 2 ? 'pasillo_despues_col_piso2' : 'pasillo_despues_col';
-    const cleanedBaths = (design.celdasBano || []).filter((b) => !(Number(b.piso) === piso && Number(b.columna) > c));
-    const cleanedBlocked = (design.celdasBloqueadas || []).filter((b) => !(Number(b.piso) === piso && Number(b.columna) > c));
-    regenerateWithCompensation({
+    const cleanedBaths = (design.celdasBano || []).filter((b) => !(floorOf(b) === piso && Number(b.columna) > c));
+    const cleanedBlocked = (design.celdasBloqueadas || []).filter((b) => !(floorOf(b) === piso && Number(b.columna) > c));
+    const nextBase = {
+      ...design,
       [field]: c,
       [aisleField]: aisleAfterColumn(c),
       celdasBano: cleanedBaths,
       celdasBloqueadas: cleanedBlocked
+    };
+    const seats = generateSeatsFromDesign({
+      ...nextBase,
+      asientosVip: (design.asientos || []).filter((s) => s.categoria === 'VIP').map((s) => s.numero_asiento),
+      asientosGrandes: (design.asientos || []).filter((s) => s.tamano === 'GRANDE').map((s) => s.numero_asiento)
     });
-  }
-
-  function renumberSeats(seats) {
-    const sorted = [...seats].sort((a, b) => {
-      if (a.piso !== b.piso) return a.piso - b.piso;
-      if ((a.fila_piso || a.fila) !== (b.fila_piso || b.fila)) return (a.fila_piso || a.fila) - (b.fila_piso || b.fila);
-      return a.columna - b.columna;
-    });
-    return sorted.map((s, idx) => ({ ...s, numero_asiento: idx + 1 }));
+    commit({
+      ...nextBase,
+      asientos: seats,
+      capacidad: seats.length,
+      capacidad_piso1: seats.filter((s) => floorOf(s) === 1).length,
+      extraRowsP1: 0,
+      extraRowsP2: 0
+    }, `Distribución del piso ${piso} cambiada a ${c} columnas.`);
   }
 
   function handleCellClick(piso, fila, columna) {
-    const key = coordKey(piso, fila, columna);
-    const seats = [...(design.asientos || [])];
-    const baths = [...(design.celdasBano || [])];
-    const blocked = [...(design.celdasBloqueadas || [])];
-
-    const seatIdx = seats.findIndex((s) => (Number(s.piso) === 2 ? 2 : 1) === piso && Number(s.fila_piso || s.fila) === fila && Number(s.columna) === columna);
-    const bathIdx = baths.findIndex((b) => (Number(b.piso) === 2 ? 2 : 1) === piso && Number(b.fila) === fila && Number(b.columna) === columna);
-    const blkIdx = blocked.findIndex((b) => (Number(b.piso) === 2 ? 2 : 1) === piso && Number(b.fila) === fila && Number(b.columna) === columna);
-
-    // MODO MOVER / INTERCAMBIAR
     if (tool === 'mover') {
+      const hasAnything =
+        (design.asientos || []).some((s) => floorOf(s) === piso && rowOf(s) === fila && Number(s.columna) === columna) ||
+        (design.celdasBano || []).some((b) => floorOf(b) === piso && Number(b.fila) === fila && Number(b.columna) === columna) ||
+        (design.celdasBloqueadas || []).some((b) => floorOf(b) === piso && Number(b.fila) === fila && Number(b.columna) === columna);
+
       if (!moveSource) {
-        if (seatIdx === -1) return;
-        setMoveSource({ piso, fila, columna, numero: seats[seatIdx].numero_asiento });
+        if (!hasAnything) return;
+        const foundSeat = (design.asientos || []).find((s) => floorOf(s) === piso && rowOf(s) === fila && Number(s.columna) === columna);
+        setMoveSource({ piso, fila, columna, label: foundSeat ? `Asiento #${foundSeat.numero_asiento}` : 'Elemento' });
         return;
       }
       if (moveSource.piso === piso && moveSource.fila === fila && moveSource.columna === columna) {
         setMoveSource(null);
         return;
       }
-      const srcIdx = seats.findIndex(
-        (s) => (Number(s.piso) === 2 ? 2 : 1) === moveSource.piso && Number(s.fila_piso || s.fila) === moveSource.fila && Number(s.columna) === moveSource.columna
-      );
-      if (srcIdx === -1) {
-        setMoveSource(null);
-        return;
-      }
-      if (seatIdx !== -1) {
-        // Intercambiar dos asientos (conservando sus categorías/tamaños en las nuevas posiciones)
-        const src = seats[srcIdx];
-        const dst = seats[seatIdx];
-        seats[srcIdx] = { ...src, piso: dst.piso, fila_piso: dst.fila_piso, fila: dst.fila_piso, columna: dst.columna };
-        seats[seatIdx] = { ...dst, piso: src.piso, fila_piso: src.fila_piso, fila: src.fila_piso, columna: src.columna };
-      } else {
-        // Mover asiento a celda destino (limpiando baño/bloqueo si había)
-        if (bathIdx !== -1) baths.splice(bathIdx, 1);
-        if (blkIdx !== -1) blocked.splice(blkIdx, 1);
-        seats[srcIdx] = { ...seats[srcIdx], piso, fila_piso: fila, fila, columna };
-      }
+      const { design: nextDesign, note } = moveOrSwapCell(design, moveSource, { piso, fila, columna });
       setMoveSource(null);
-      emit({
-        ...design,
-        celdasBano: baths,
-        celdasBloqueadas: blocked,
-        asientos: seats,
-        capacidad: seats.length,
-        capacidad_piso1: seats.filter((s) => s.piso === 1).length
-      });
+      commit(nextDesign, note);
       return;
     }
 
-    // MODO VIP GRANDE
-    if (tool === 'vip') {
-      if (seatIdx !== -1) {
-        const current = seats[seatIdx];
-        const nextIsVip = !(current.categoria === 'VIP' && current.tamano === 'GRANDE');
-        seats[seatIdx] = {
-          ...current,
-          categoria: nextIsVip ? 'VIP' : 'NORMAL',
-          tamano: nextIsVip ? 'GRANDE' : 'NORMAL'
-        };
-        emit({ ...design, asientos: seats });
-        return;
-      }
-      if (seats.length >= 100) return;
-      if (bathIdx !== -1) baths.splice(bathIdx, 1);
-      if (blkIdx !== -1) blocked.splice(blkIdx, 1);
-      seats.push({
-        numero_asiento: seats.length + 1,
-        piso,
-        fila_piso: fila,
-        fila,
-        columna,
-        categoria: 'VIP',
-        tamano: 'GRANDE'
-      });
-      const renumbered = renumberSeats(seats);
-      emit({
-        ...design,
-        celdasBano: baths,
-        celdasBloqueadas: blocked,
-        asientos: renumbered,
-        capacidad: renumbered.length,
-        capacidad_piso1: renumbered.filter((s) => s.piso === 1).length
-      });
-      return;
-    }
-
-    // MODO ASIENTO NORMAL
-    if (tool === 'normal') {
-      if (seatIdx !== -1) {
-        seats[seatIdx] = { ...seats[seatIdx], categoria: 'NORMAL', tamano: 'NORMAL' };
-        emit({ ...design, asientos: seats });
-        return;
-      }
-      if (bathIdx !== -1) baths.splice(bathIdx, 1);
-      if (blkIdx !== -1) blocked.splice(blkIdx, 1);
-      if (autoCompensate) {
-        regenerateWithCompensation({ celdasBano: baths, celdasBloqueadas: blocked });
-        return;
-      }
-      if (seats.length >= 100) return;
-      seats.push({
-        numero_asiento: seats.length + 1,
-        piso,
-        fila_piso: fila,
-        fila,
-        columna,
-        categoria: 'NORMAL',
-        tamano: 'NORMAL'
-      });
-      const renumbered = renumberSeats(seats);
-      emit({
-        ...design,
-        celdasBano: baths,
-        celdasBloqueadas: blocked,
-        asientos: renumbered,
-        capacidad: renumbered.length,
-        capacidad_piso1: renumbered.filter((s) => s.piso === 1).length
-      });
-      return;
-    }
-
-    // MODO BAÑO WC
-    if (tool === 'bano') {
-      if (bathIdx !== -1) {
-        baths.splice(bathIdx, 1);
-      } else {
-        if (blkIdx !== -1) blocked.splice(blkIdx, 1);
-        baths.push({ piso, fila, columna });
-      }
-      if (autoCompensate) {
-        regenerateWithCompensation({ celdasBano: baths, celdasBloqueadas: blocked });
-      } else {
-        const filtered = seats.filter((s) => coordKey(s.piso, s.fila_piso || s.fila, s.columna) !== key);
-        const renumbered = renumberSeats(filtered);
-        emit({
-          ...design,
-          celdasBano: baths,
-          celdasBloqueadas: blocked,
-          asientos: renumbered,
-          capacidad: renumbered.length,
-          capacidad_piso1: renumbered.filter((s) => s.piso === 1).length
-        });
-      }
-      return;
-    }
-
-    // MODO PUERTA / ESCALERA o BLOQUEAR
-    if (tool === 'puerta' || tool === 'bloquear') {
-      const targetTipo = tool === 'puerta' ? (design.pisos === 2 && fila > 1 ? 'ESCALERA' : 'PUERTA') : 'BLOQUEADO';
-      if (blkIdx !== -1 && blocked[blkIdx].tipo === targetTipo) {
-        blocked.splice(blkIdx, 1);
-      } else {
-        if (bathIdx !== -1) baths.splice(bathIdx, 1);
-        if (blkIdx !== -1) blocked[blkIdx] = { piso, fila, columna, tipo: targetTipo };
-        else blocked.push({ piso, fila, columna, tipo: targetTipo });
-      }
-      if (autoCompensate) {
-        regenerateWithCompensation({ celdasBano: baths, celdasBloqueadas: blocked });
-      } else {
-        const filtered = seats.filter((s) => coordKey(s.piso, s.fila_piso || s.fila, s.columna) !== key);
-        if (filtered.length < 1) return;
-        const renumbered = renumberSeats(filtered);
-        emit({
-          ...design,
-          celdasBano: baths,
-          celdasBloqueadas: blocked,
-          asientos: renumbered,
-          capacidad: renumbered.length,
-          capacidad_piso1: renumbered.filter((s) => s.piso === 1).length
-        });
-      }
+    const { design: nextDesign, note } = applyCellOperation(design, {
+      tool,
+      piso,
+      fila,
+      columna,
+      autoCompensate
+    });
+    if (nextDesign !== design) {
+      commit(nextDesign, note);
+    } else if (note) {
+      flashNote(note);
     }
   }
 
-  function applyFirstRowDemo() {
-    // Ejemplo exacto T-06 / BUS-17: bloquear 3 posiciones en primera fila y compensarlas al final
-    const cols = design.columnas || 4;
-    const extraBlocks = [];
-    for (let c = 2; c <= cols; c++) {
-      extraBlocks.push({ piso: 1, fila: 1, columna: c, tipo: c === cols ? 'PUERTA' : 'BLOQUEADO' });
+  function handleToggleRowVip(piso, fila) {
+    const seats = [...(design.asientos || [])];
+    const rowSeats = seats.filter((s) => floorOf(s) === piso && rowOf(s) === fila);
+    if (!rowSeats.length) return;
+    const allVip = rowSeats.every((s) => s.categoria === 'VIP');
+    const nextSeats = seats.map((s) => (
+      floorOf(s) === piso && rowOf(s) === fila
+        ? { ...s, categoria: allVip ? 'NORMAL' : 'VIP', tamano: allVip ? 'NORMAL' : 'GRANDE' }
+        : s
+    ));
+    commit(
+      { ...design, asientos: nextSeats },
+      `Fila ${fila} marcada como ${allVip ? 'Normal' : 'VIP Grande'}.`
+    );
+  }
+
+  function handleDeleteEmptyRow(piso, fila) {
+    const next = deleteEmptyRow(design, piso, fila);
+    if (next !== design) {
+      commit(next, `Fila vacía F${fila} eliminada.`);
     }
-    const kept = (design.celdasBloqueadas || []).filter((b) => !(Number(b.piso) === 1 && Number(b.fila) === 1));
-    regenerateWithCompensation({ celdasBloqueadas: [...kept, ...extraBlocks] });
+  }
+
+  function handleFirstRowDemo() {
+    const { design: nextDesign, displacedCount } = applyFirstRowBus17(design);
+    commit(
+      nextDesign,
+      `Fila 1 configurada con 1 asiento + puerta · ${displacedCount} plaza(s) compensadas al final (total: ${nextDesign.capacidad}).`
+    );
   }
 
   const floors = design.pisos === 2 ? [1, 2] : [1];
+  const activeToolObj = TOOLS.find((t) => t.id === tool) || TOOLS[0];
 
   return (
     <div className={`bus-designer ${compact ? 'is-compact' : ''}`}>
-      {/* Barra superior: selector de plantilla base + configuración física */}
+      {/* Barra superior: plantilla base + pisos + capacidad + columnas */}
       <div className="bus-designer-controls">
         <label className="designer-template-select">
           <span>Plantilla base del bus</span>
@@ -631,16 +325,42 @@ export default function BusTemplateDesigner({
           </button>
         </div>
 
-        <label className="designer-mini-field">
-          <span>Total asientos</span>
-          <input
-            type="number"
-            min={1}
-            max={100}
-            value={design.capacidad}
-            onChange={(e) => handleCapacityChange(e.target.value)}
-          />
-        </label>
+        <div className="designer-mini-field">
+          <label className="designer-field-caption" htmlFor="designer-cap-input">Total asientos</label>
+          <div className="designer-stepper">
+            <button
+              type="button"
+              aria-label="Restar un asiento"
+              disabled={design.capacidad <= 1}
+              onClick={() => handleCapacityCommit(design.capacidad - 1)}
+            >
+              <Minus size={14} />
+            </button>
+            <input
+              id="designer-cap-input"
+              type="number"
+              min={1}
+              max={100}
+              value={capInput}
+              onChange={(e) => {
+                setCapInput(e.target.value);
+                const parsed = parseInt(e.target.value, 10);
+                if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 && parsed !== design.capacidad) {
+                  commit(adjustCapacityPreservingLayout(design, parsed));
+                }
+              }}
+              onBlur={() => handleCapacityCommit(capInput)}
+            />
+            <button
+              type="button"
+              aria-label="Sumar un asiento"
+              disabled={design.capacidad >= 100}
+              onClick={() => handleCapacityCommit(design.capacidad + 1)}
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
 
         {design.pisos === 2 && (
           <label className="designer-mini-field">
@@ -649,11 +369,9 @@ export default function BusTemplateDesigner({
               type="number"
               min={1}
               max={Math.max(1, design.capacidad - 1)}
-              value={design.capacidad_piso1}
-              onChange={(e) => {
-                const p1 = Math.max(1, Math.min(design.capacidad - 1, parseInt(e.target.value, 10) || 1));
-                regenerateWithCompensation({ capacidad_piso1: p1 });
-              }}
+              value={capP1Input}
+              onChange={(e) => setCapP1Input(e.target.value)}
+              onBlur={() => handleP1CapacityCommit(capP1Input)}
             />
           </label>
         )}
@@ -688,7 +406,7 @@ export default function BusTemplateDesigner({
               <button
                 key={t.id}
                 type="button"
-                className={`designer-tool-btn ${tool === t.id ? 'is-active' : ''}`}
+                className={`designer-tool-btn ${tool === t.id ? `is-active is-${t.tone}` : ''}`}
                 title={t.hint}
                 onClick={() => setTool(t.id)}
               >
@@ -700,16 +418,33 @@ export default function BusTemplateDesigner({
         </div>
 
         <div className="designer-quick-actions">
-          <label className="designer-checkbox">
+          <label className="designer-checkbox" title="Al colocar un baño o puerta sobre un asiento, mueve ese asiento al final para no perder capacidad">
             <input
               type="checkbox"
               checked={autoCompensate}
               onChange={(e) => setAutoCompensate(e.target.checked)}
             />
-            <span>Auto-compensar al final (BUS-17)</span>
+            <span>Auto-compensar al colocar WC/Puerta (BUS-17)</span>
           </label>
-          <button type="button" className="designer-link-btn" onClick={applyFirstRowDemo} title="Bloquea 3 celdas de la fila 1 y las compensa atrás">
+          <button type="button" className="designer-link-btn" onClick={handleFirstRowDemo} title="Deja 1 asiento en la fila 1 + puerta y compensa los demás al final">
             <Sparkles size={14} /> Fila 1 (1 asiento)
+          </button>
+          <button
+            type="button"
+            className="designer-link-btn"
+            onClick={() => commit({ ...design, asientos: renumberSeats(design.asientos || []) }, 'Asientos renumerados del 1 al final.')}
+            title="Ordena los números 1..N desde el frente hacia atrás"
+          >
+            <Hash size={14} /> Renumerar
+          </button>
+          <button
+            type="button"
+            className="designer-link-btn"
+            disabled={!history.length}
+            onClick={handleUndo}
+            title="Deshacer último cambio"
+          >
+            <Undo2 size={14} /> Deshacer
           </button>
           <button
             type="button"
@@ -721,24 +456,31 @@ export default function BusTemplateDesigner({
         </div>
       </div>
 
-      {/* Métricas vivas y guía de modo mover */}
-      <div className="bus-designer-stats">
-        <span className="designer-stat"><strong>{stats.total}</strong> asientos totales</span>
-        <span className="designer-stat is-vip"><Crown size={13} /> <strong>{stats.vip}</strong> VIP Grandes</span>
-        <span className="designer-stat"><strong>{stats.normal}</strong> Normales</span>
-        <span className="designer-stat"><Bath size={13} /> <strong>{stats.baths}</strong> WC</span>
-        {stats.blocked + stats.baths > 0 && (
-          <span className="designer-stat is-comp">
-            Compensación: <strong>{stats.blocked + stats.baths}</strong> espacios especiales
-          </span>
-        )}
+      {/* Guía dinámica de la herramienta activa + métricas */}
+      <div className="designer-helper-strip">
+        <div className="bus-designer-stats">
+          <span className="designer-stat"><strong>{stats.total}</strong> asientos</span>
+          <span className="designer-stat is-vip"><Crown size={13} /> <strong>{stats.vip}</strong> VIP Grandes</span>
+          <span className="designer-stat"><strong>{stats.normal}</strong> Normales</span>
+          <span className="designer-stat"><Bath size={13} /> <strong>{stats.baths}</strong> WC</span>
+          {stats.doors > 0 && (
+            <span className="designer-stat is-comp"><DoorOpen size={13} /> <strong>{stats.doors}</strong> Puerta/Esc</span>
+          )}
+        </div>
+        <span className="designer-tool-hint">
+          <GripVertical size={13} /> {activeToolObj.hint} · También puedes <strong>arrastrar y soltar</strong> cualquier asiento o baño.
+        </span>
       </div>
+
+      {statusNote && (
+        <p className="designer-status-toast" role="status">{statusNote}</p>
+      )}
 
       {tool === 'mover' && (
         <p className="designer-move-banner" role="status">
           {moveSource
-            ? `Asiento #${moveSource.numero} seleccionado (Piso ${moveSource.piso}, Fila ${moveSource.fila}). Haz clic en cualquier celda libre o en otro asiento para moverlo/intercambiarlo.`
-            : 'Modo Mover activo: haz clic primero en el asiento que deseas mover o intercambiar.'}
+            ? `${moveSource.label} seleccionado (Piso ${moveSource.piso}, Fila ${moveSource.fila}). Haz clic en otra celda o asiento para moverlo/intercambiarlo.`
+            : 'Modo Mover activo: haz clic en un asiento o elemento y luego en su destino (o arrástralo directamente).'}
         </p>
       )}
 
@@ -747,32 +489,73 @@ export default function BusTemplateDesigner({
         {floors.map((piso) => {
           const cols = piso === 2 ? design.columnas_piso2 : design.columnas;
           const aisleAfter = aisleAfterColumn(cols, piso === 2 ? design.pasillo_despues_col_piso2 : design.pasillo_despues_col);
-          const floorSeats = (design.asientos || []).filter((s) => (Number(s.piso) === 2 ? 2 : 1) === piso);
-          const floorBaths = (design.celdasBano || []).filter((b) => (Number(b.piso) === 2 ? 2 : 1) === piso);
-          const floorBlocked = (design.celdasBloqueadas || []).filter((b) => (Number(b.piso) === 2 ? 2 : 1) === piso);
+          const floorSeats = (design.asientos || []).filter((s) => floorOf(s) === piso);
+          const floorBaths = (design.celdasBano || []).filter((b) => floorOf(b) === piso);
+          const floorBlocked = (design.celdasBloqueadas || []).filter((b) => floorOf(b) === piso);
 
-          const maxRow = Math.max(
-            ...floorSeats.map((s) => Number(s.fila_piso || s.fila || 1)),
+          const usedMaxRow = Math.max(
+            ...floorSeats.map((s) => rowOf(s)),
             ...floorBaths.map((b) => Number(b.fila || 1)),
             ...floorBlocked.map((b) => Number(b.fila || 1)),
-            4
-          ) + (piso === 2 ? (design.extraRowsP2 || 0) : (design.extraRowsP1 || 0));
+            1
+          );
+          const extraKey = piso === 2 ? 'extraRowsP2' : 'extraRowsP1';
+          const extraRows = design[extraKey] || 0;
+          const maxRow = Math.min(40, usedMaxRow + extraRows);
 
-          const seatMap = new Map(floorSeats.map((s) => [coordKey(piso, s.fila_piso || s.fila, s.columna), s]));
-          const bathMap = new Map(floorBaths.map((b) => [coordKey(piso, b.fila, b.columna), b]));
-          const blkMap = new Map(floorBlocked.map((b) => [coordKey(piso, b.fila, b.columna), b]));
+          const seatMap = new Map(floorSeats.map((s) => [coordKey(piso, rowOf(s), Number(s.columna)), s]));
+          const bathMap = new Map(floorBaths.map((b) => [coordKey(piso, Number(b.fila), Number(b.columna)), b]));
+          const blkMap = new Map(floorBlocked.map((b) => [coordKey(piso, Number(b.fila), Number(b.columna)), b]));
 
           const wideVipFloor = cols === 3 || (design.pisos === 2 && piso === 1 && floorSeats.some((s) => s.tamano === 'GRANDE'));
+          const rightActionCol = cols + 3;
 
           const cells = [];
           for (let r = 1; r <= maxRow; r++) {
+            const rowHasSeats = floorSeats.some((s) => rowOf(s) === r);
+            const rowIsEmpty =
+              !rowHasSeats &&
+              !floorBaths.some((b) => Number(b.fila) === r) &&
+              !floorBlocked.some((b) => Number(b.fila) === r);
+            const rowAllVip = rowHasSeats && floorSeats.filter((s) => rowOf(s) === r).every((s) => s.categoria === 'VIP');
+
+            cells.push(
+              <span
+                key={`row-label-${piso}-${r}`}
+                className="designer-row-tag"
+                style={{ gridRow: r, gridColumn: 1 }}
+              >
+                F{r}
+              </span>
+            );
+
             for (let c = 1; c <= cols; c++) {
               const key = coordKey(piso, r, c);
               const seat = seatMap.get(key);
               const bath = bathMap.get(key);
               const blk = blkMap.get(key);
               const isMoveOrigin = moveSource && moveSource.piso === piso && moveSource.fila === r && moveSource.columna === c;
-              const style = { gridRow: r, gridColumn: gridColumnForLogical(c, aisleAfter) };
+              const isDragOver = dragOverKey === key;
+              const gridCol = gridColumnForLogical(c, aisleAfter) + 1;
+              const style = { gridRow: r, gridColumn: gridCol };
+
+              const dragHandlers = {
+                onDragOver: (e) => {
+                  e.preventDefault();
+                  if (dragOverKey !== key) setDragOverKey(key);
+                },
+                onDragLeave: () => {
+                  if (dragOverKey === key) setDragOverKey('');
+                },
+                onDrop: (e) => {
+                  e.preventDefault();
+                  setDragOverKey('');
+                  if (!dragSource) return;
+                  const { design: nextDesign, note } = moveOrSwapCell(design, dragSource, { piso, fila: r, columna: c });
+                  setDragSource(null);
+                  if (nextDesign !== design) commit(nextDesign, note);
+                }
+              };
 
               if (seat) {
                 const isVip = seat.categoria === 'VIP';
@@ -781,10 +564,14 @@ export default function BusTemplateDesigner({
                   <button
                     key={key}
                     type="button"
+                    draggable
                     style={style}
-                    className={`seat designer-cell ${isVip ? 'vip' : ''} ${isLarge ? 'seat-large' : ''} ${isMoveOrigin ? 'is-move-origin' : ''}`}
+                    className={`seat designer-cell ${isVip ? 'vip' : ''} ${isLarge ? 'seat-large' : ''} ${isMoveOrigin ? 'is-move-origin' : ''} ${isDragOver ? 'is-drag-over' : ''} ${tool === 'borrar' ? 'is-delete-cursor' : ''}`}
+                    onDragStart={() => setDragSource({ piso, fila: r, columna: c })}
+                    onDragEnd={() => { setDragSource(null); setDragOverKey(''); }}
+                    {...dragHandlers}
                     onClick={() => handleCellClick(piso, r, c)}
-                    title={`Asiento #${seat.numero_asiento} (${isVip ? 'VIP Grande' : 'Normal'}) · Fila ${r}, Col ${c}`}
+                    title={`Asiento #${seat.numero_asiento} (${isVip ? 'VIP Grande' : 'Normal'}) · Fila ${r}, Col ${c} · Arrastra para mover`}
                   >
                     {isVip ? (
                       <span className="seat-vip-head">
@@ -803,10 +590,14 @@ export default function BusTemplateDesigner({
                   <button
                     key={key}
                     type="button"
+                    draggable
                     style={style}
-                    className="bus-bathroom designer-cell"
+                    className={`bus-bathroom designer-cell ${isMoveOrigin ? 'is-move-origin' : ''} ${isDragOver ? 'is-drag-over' : ''}`}
+                    onDragStart={() => setDragSource({ piso, fila: r, columna: c })}
+                    onDragEnd={() => { setDragSource(null); setDragOverKey(''); }}
+                    {...dragHandlers}
                     onClick={() => handleCellClick(piso, r, c)}
-                    title={`Baño WC (Fila ${r}, Col ${c}) · Clic para editar`}
+                    title={`Baño WC (Fila ${r}, Col ${c}) · Clic para editar o arrastra para mover`}
                   >
                     <Bath size={18} />
                     <span>WC</span>
@@ -814,18 +605,21 @@ export default function BusTemplateDesigner({
                 );
               } else if (blk) {
                 const isStairs = blk.tipo === 'ESCALERA';
-                const isDoor = blk.tipo === 'PUERTA';
                 cells.push(
                   <button
                     key={key}
                     type="button"
+                    draggable
                     style={style}
-                    className={`bus-special-cell designer-cell ${isStairs ? 'is-stairs' : isDoor ? 'is-door' : 'is-blocked'}`}
+                    className={`bus-special-cell designer-cell ${isStairs ? 'is-stairs' : 'is-door'} ${isMoveOrigin ? 'is-move-origin' : ''} ${isDragOver ? 'is-drag-over' : ''}`}
+                    onDragStart={() => setDragSource({ piso, fila: r, columna: c })}
+                    onDragEnd={() => { setDragSource(null); setDragOverKey(''); }}
+                    {...dragHandlers}
                     onClick={() => handleCellClick(piso, r, c)}
-                    title={`${blk.tipo} (Fila ${r}, Col ${c}) · Clic para editar`}
+                    title={`${isStairs ? 'Escalera' : 'Puerta'} (Fila ${r}, Col ${c}) · Clic para editar o arrastra para mover`}
                   >
-                    {isStairs ? <ArrowUpDown size={15} /> : isDoor ? <DoorOpen size={15} /> : <Ban size={14} />}
-                    <span>{isStairs ? 'ESC' : isDoor ? 'PUERTA' : 'VACÍO'}</span>
+                    {isStairs ? <ArrowUpDown size={15} /> : <DoorOpen size={15} />}
+                    <span>{isStairs ? 'ESC' : 'PUERTA'}</span>
                   </button>
                 );
               } else {
@@ -834,15 +628,44 @@ export default function BusTemplateDesigner({
                     key={key}
                     type="button"
                     style={style}
-                    className="designer-empty-cell"
+                    className={`designer-empty-cell ${isDragOver ? 'is-drag-over' : ''}`}
+                    {...dragHandlers}
                     onClick={() => handleCellClick(piso, r, c)}
-                    title={`Celda libre (Fila ${r}, Col ${c}) · Clic para colocar elemento`}
+                    title={`Espacio vacío (Fila ${r}, Col ${c}) · Clic para colocar ${activeToolObj.label}`}
                   >
                     <span>+</span>
                   </button>
                 );
               }
             }
+
+            cells.push(
+              rowHasSeats ? (
+                <button
+                  key={`row-act-${piso}-${r}`}
+                  type="button"
+                  className={`designer-row-btn ${rowAllVip ? 'is-vip-on' : ''}`}
+                  style={{ gridRow: r, gridColumn: rightActionCol }}
+                  onClick={() => handleToggleRowVip(piso, r)}
+                  title={rowAllVip ? `Convertir toda la fila ${r} a Normal` : `Marcar toda la fila ${r} como VIP Grande`}
+                >
+                  <Crown size={12} />
+                </button>
+              ) : rowIsEmpty && maxRow > 1 ? (
+                <button
+                  key={`row-del-${piso}-${r}`}
+                  type="button"
+                  className="designer-row-btn is-del"
+                  style={{ gridRow: r, gridColumn: rightActionCol }}
+                  onClick={() => handleDeleteEmptyRow(piso, r)}
+                  title={`Eliminar fila vacía F${r}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              ) : (
+                <span key={`row-sp-${piso}-${r}`} style={{ gridRow: r, gridColumn: rightActionCol }} />
+              )
+            );
           }
 
           return (
@@ -869,16 +692,24 @@ export default function BusTemplateDesigner({
 
               <div className="designer-floor-footer">
                 <span className="bus-rear" style={{ margin: 0 }}>PARTE POSTERIOR</span>
-                <button
-                  type="button"
-                  className="designer-add-row-btn"
-                  onClick={() => emit({
-                    ...design,
-                    [piso === 2 ? 'extraRowsP2' : 'extraRowsP1']: (piso === 2 ? (design.extraRowsP2 || 0) : (design.extraRowsP1 || 0)) + 1
-                  })}
-                >
-                  <Plus size={13} /> Fila
-                </button>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {extraRows > 0 && (
+                    <button
+                      type="button"
+                      className="designer-add-row-btn is-remove"
+                      onClick={() => onChange?.({ ...design, [extraKey]: Math.max(0, extraRows - 1) })}
+                    >
+                      <Minus size={13} /> Quitar fila
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="designer-add-row-btn"
+                    onClick={() => onChange?.({ ...design, [extraKey]: extraRows + 1 })}
+                  >
+                    <Plus size={13} /> Fila
+                  </button>
+                </div>
               </div>
             </div>
           );

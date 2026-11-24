@@ -1439,3 +1439,27 @@ exports.eliminarFrecuencia = async (req, res) => {
     res.status(400).json({ error: 'No se puede eliminar la frecuencia porque tiene viajes programados asociados.' });
   }
 };
+
+// ==========================================
+// 6. SUBIDA DE IMÁGENES (LOGOS Y FOTOS DE BUSES)
+// ==========================================
+exports.subirImagenesAdmin = (req, res) => {
+  const files = Array.isArray(req.files) ? req.files : (req.file ? [req.file] : []);
+  if (files.length === 0) {
+    return res.status(400).json({ error: 'Selecciona al menos una imagen para subir.' });
+  }
+
+  const archivos = files.map((file) => ({
+    url: `/uploads/media/${file.filename}`,
+    nombre: file.originalname,
+    tipo: file.mimetype,
+    tamano: file.size
+  }));
+
+  return res.status(201).json({
+    mensaje: archivos.length === 1 ? 'Imagen subida correctamente.' : `${archivos.length} imágenes subidas correctamente.`,
+    url: archivos[0].url,
+    urls: archivos.map((item) => item.url),
+    archivos
+  });
+};

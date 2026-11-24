@@ -1,7 +1,8 @@
 // frontend/src/pages/Admin/PersonalizacionBranding.jsx
 import React, { useState } from 'react';
+import ImageUploadControl from '../../components/ImageUploadControl.jsx';
 
-export default function PersonalizacionBranding({ cooperativas = [], onActualizarCoop, cooperativa = null, onClose = null, onGuardar = null }) {
+export default function PersonalizacionBranding({ cooperativas = [], onActualizarCoop, cooperativa = null, onClose = null, onGuardar = null, user = null }) {
   const lista = cooperativas && cooperativas.length > 0 ? cooperativas : (cooperativa ? [cooperativa] : []);
   const [selectedId, setSelectedId] = useState(cooperativa?.id || lista[0]?.id || 1);
   const coop = cooperativa || lista.find((c) => c.id === Number(selectedId)) || lista[0];
@@ -148,21 +149,52 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
 
             {/* Logotipo */}
             <div style={styles.fieldGroup}>
-              <label style={styles.fieldLabel}>URL del Logotipo Institucional</label>
-              <input
-                type="text"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="https://ejemplo.com/logo-cooperativa.png"
-                style={styles.textInput}
+              <label style={styles.fieldLabel}>Logotipo Institucional (subir archivo o pegar URL)</label>
+              <ImageUploadControl
+                user={user}
+                compact
+                disabled={saving}
+                buttonLabel="Subir logotipo desde tu dispositivo"
+                onUploaded={(urls) => {
+                  if (urls[0]) setLogoUrl(urls[0]);
+                }}
               />
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://ejemplo.com/logo-cooperativa.png o sube un archivo arriba"
+                  style={{ ...styles.textInput, flex: 1 }}
+                />
+                {logoUrl && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setLogoUrl('')}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #FCA5A5',
+                      background: '#FEF2F2',
+                      color: '#B91C1C',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '10px', padding: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
                 {logoUrl ? (
                   <img
                     key={`logo-form-${logoUrl}`}
                     src={logoUrl}
                     alt={`Vista previa ${coop?.nombre}`}
-                    style={{ width: '84px', height: '84px', borderRadius: '14px', objectFit: 'cover', backgroundColor: '#FFFFFF', border: `3px solid ${color}`, padding: '3px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}
+                    style={{ width: '84px', height: '84px', borderRadius: '14px', objectFit: 'contain', backgroundColor: '#FFFFFF', border: `3px solid ${color}`, padding: '4px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}
                     onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />

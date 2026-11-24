@@ -1,12 +1,13 @@
-# Código de Conducta del Equipo de Desarrollo
+# Código de Conducta y Ética Profesional del Equipo de Desarrollo
 
-## 1. Propósito y Compromiso
-Como estudiantes de la carrera de Software de la Universidad Técnica de Ambato, nos comprometemos a mantener un ambiente colaborativo profesional, respetuoso y equitativo durante la ejecución de las fases del proyecto.
+## 1. Compromiso Académico y Profesional
+Como estudiantes de la carrera de Ingeniería de Software de la Universidad Técnica de Ambato (FISEI), el equipo asume el compromiso ético de desarrollar y mantener el sistema **"En Ruta — Transporte Interprovincial UTA"** bajo principios de honestidad académica, rigor técnico y respeto mutuo.
 
-## 2. Pautas de Trabajo Colaborativo
-* **Revisión constructiva:** En las revisiones de código (Pull Requests), los comentarios deben ser objetivos, fundamentados y orientados a la mejora de la arquitectura y buenas prácticas.
-* **Cumplimiento de compromisos:** Cada integrante asume la autoría y entrega oportuna de su módulo asignado, informando con antelación cualquier eventualidad técnica.
-* **Integridad académica:** Se promueve la autoría propia, la rigurosidad en los ensayos y el apego estricto a las normas de citación y licenciamiento de software libre (GPL-3.0).
+## 2. Principios de Gobernanza y Control de Cambios
+* **Transparencia en el Control de Cambios:** Todo ajuste, corrección o mejora debe ser gestionado bajo el marco ITIL 4 a través de la plataforma oficial, prohibiendo cambios no autorizados o directos en producción.
+* **Segregación de Funciones y Veracidad:** Las evaluaciones del Comité CAB y las revisiones de código en Pull Requests deben ser objetivas, fundamentadas y estrictamente apegadas a las evidencias técnicas registradas.
+* **Integridad de Evidencias:** Queda terminantemente prohibida la alteración de registros de prueba, logs o capturas funcionales presentadas en los cierres de tickets (PIR).
+* **Calidad y Respaldo Colectivo:** Cada integrante asume con responsabilidad la autoría de sus módulos y el soporte continuo a sus compañeros para garantizar la estabilidad de la plataforma.
 
-## 3. Resolución de Conflictos
-Cualquier discrepancia técnica relativa a arquitectura o flujos Git será mediada por el líder de proyecto y el equipo en consenso, velando siempre por los requisitos de la cátedra de Manejo y Configuración de Software.
+## 3. Resolución de Discrepancias Técnicas
+Cualquier conflicto de criterio respecto a arquitectura, gobernanza Git o dictámenes del CAB será mediado por el Líder SCM y el Presidente del CAB en consenso con el equipo, priorizando las directrices de la cátedra de Manejo y Configuración de Software.

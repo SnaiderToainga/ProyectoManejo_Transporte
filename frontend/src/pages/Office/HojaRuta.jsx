@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Bus,
@@ -85,6 +85,8 @@ export default function HojaRuta({ usuario }) {
   const [saving, setSaving] = useState(false);
   const [reload, setReload] = useState(0);
   const [catalogReload, setCatalogReload] = useState(0);
+  const prevCoopRef = useRef(cooperativeId);
+  const prevMatrixKeyRef = useRef('');
 
   // Herramienta interactiva: pincel de unidad y Drag & Drop
   const [activeBrush, setActiveBrush] = useState(null); // null | 'CLEAR' | busId (number)
@@ -110,16 +112,21 @@ export default function HojaRuta({ usuario }) {
   useEffect(() => {
     if (!cooperativeId) return;
     const abort = new AbortController();
-    setCatalog(null);
-    setMatrix(null);
-    setDraft({});
-    setActiveBrush(null);
+    const coopChanged = String(prevCoopRef.current) !== String(cooperativeId);
+    prevCoopRef.current = cooperativeId;
+    if (coopChanged) {
+      setCatalog(null);
+      setMatrix(null);
+      setDraft({});
+      setActiveBrush(null);
+    }
     setError('');
     planningRequest(usuario, `/planificacion/catalogo?cooperativa_id=${cooperativeId}`, { signal: abort.signal }).then(data => {
       setCatalog(data);
       setFilters(current => {
         const group = data.grupos_buses.find(g => String(g.id) === String(current.grupo_buses_id)) || data.grupos_buses[0];
-        const linked = data.vinculos.find(v => v.grupo_buses_id === group?.id);
+        const linked = data.vinculos.find(v => v.grupo_buses_id === group?.id && String(v.grupo_frecuencias_id) === String(current.grupo_frecuencias_id))
+          || data.vinculos.find(v => v.grupo_buses_id === group?.id);
         return { ...current, grupo_buses_id: group?.id || '', grupo_frecuencias_id: linked?.grupo_frecuencias_id || '' };
       });
     }).catch(err => { if (!abort.signal.aborted) setError(err.message); });
@@ -127,12 +134,23 @@ export default function HojaRuta({ usuario }) {
   }, [cooperativeId, usuario?.token, catalogReload]);
 
   useEffect(() => {
-    setMatrix(null);
-    setDraft({});
-    setActiveBrush(null);
-    if (!catalog || !filters.grupo_buses_id || !filters.grupo_frecuencias_id) return;
+    if (!catalog || !filters.grupo_buses_id || !filters.grupo_frecuencias_id) {
+      setMatrix(null);
+      setDraft({});
+      setActiveBrush(null);
+      prevMatrixKeyRef.current = '';
+      return;
+    }
+    const matrixKey = `${cooperativeId}:${filters.grupo_buses_id}:${filters.grupo_frecuencias_id}`;
+    const switchedGroup = prevMatrixKeyRef.current && prevMatrixKeyRef.current !== matrixKey;
+    prevMatrixKeyRef.current = matrixKey;
+    if (switchedGroup) {
+      setMatrix(null);
+      setDraft({});
+      setActiveBrush(null);
+      setLoading(true);
+    }
     const abort = new AbortController();
-    setLoading(true);
     setError('');
     const params = new URLSearchParams({ ...filters, cooperativa_id: cooperativeId });
     planningRequest(usuario, `/planificacion/matriz?${params}`, { signal: abort.signal }).then(data => {
@@ -454,9 +472,15 @@ export default function HojaRuta({ usuario }) {
           cooperativaId={cooperativeId}
           catalogo={catalog}
           onGoMatrix={() => setTab('matriz')}
-          onChanged={() => {
-            setMessage('✓ Configuración guardada correctamente.');
-            setCatalogReload(v => v + 1);
+          onChanged={async () => {
+            const fresh = await planningRequest(usuario, `/planificacion/catalogo?cooperativa_id=${cooperativeId}`);
+            setCatalog(fresh);
+            setFilters(current => {
+              const group = fresh.grupos_buses.find(g => String(g.id) === String(current.grupo_buses_id)) || fresh.grupos_buses[0];
+              const linked = fresh.vinculos.find(v => v.grupo_buses_id === group?.id && String(v.grupo_frecuencias_id) === String(current.grupo_frecuencias_id))
+                || fresh.vinculos.find(v => v.grupo_buses_id === group?.id);
+              return { ...current, grupo_buses_id: group?.id || '', grupo_frecuencias_id: linked?.grupo_frecuencias_id || '' };
+            });
           }}
         />
       )}

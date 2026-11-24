@@ -1,11 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const uploadAdminImages = require('../config/imageUpload');
 const { verifyCooperativaOwnership } = require('../middlewares/authMiddleware');
 const { requireSession, requireRoles } = require('../services/sessionAccess');
 
 // 1. Autenticación y roles
 router.post('/login', adminController.login);
+
+// 1.1 Subida de imágenes (logos de cooperativas y fotografías de buses en cualquier formato de imagen)
+router.post('/imagenes', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), uploadAdminImages.array('imagenes', 10), adminController.subirImagenesAdmin);
 
 // 2. Cooperativas y branding
 router.get('/cooperativas', requireSession, requireRoles('ADMIN_COOP', 'SUPERADMIN'), adminController.getCooperativas);

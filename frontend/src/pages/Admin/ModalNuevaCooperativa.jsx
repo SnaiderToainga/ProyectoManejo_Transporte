@@ -12,7 +12,9 @@ import {
   Check
 } from 'lucide-react';
 import { cooperativeDraft, cooperativeErrors, cooperativePayload, safeImageUrl } from '../../lib/cooperativeForm.js';
+import { diagnosticarRucEcuador, validarCedulaEcuador } from '../../lib/validation.js';
 import Modal from '../../components/Modal.jsx';
+import ImageUploadControl from '../../components/ImageUploadControl.jsx';
 
 const steps = [
   { label: 'Cooperativa', icon: Building2 },
@@ -46,7 +48,7 @@ function generateSecurePassword(coopName = '') {
   return `${cleanPrefix}2026*${rand}`;
 }
 
-export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, cooperativa = null }) {
+export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, cooperativa = null, user = null }) {
   const [form, setForm] = useState(() => cooperativeDraft(cooperativa || {}));
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
@@ -55,8 +57,21 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
   const [otherBank, setOtherBank] = useState(!banks.includes(form.banco));
   const [showPwd, setShowPwd] = useState(false);
   const [copiedPwd, setCopiedPwd] = useState(false);
+  const [logoBroken, setLogoBroken] = useState(false);
   const editing = Boolean(cooperativa);
   if (!isOpen) return null;
+
+  const NUMERIC_FIELDS = {
+    ruc: 13,
+    telefono: 10,
+    cuenta_bancaria: 30,
+    gerente_cedula: 10,
+    gerente_telefono: 10
+  };
+
+  const rucCheck = form.ruc ? diagnosticarRucEcuador(form.ruc) : null;
+  const cedulaClean = String(form.gerente_cedula || '').trim();
+  const cedulaValida = cedulaClean.length === 10 && validarCedulaEcuador(cedulaClean);
 
   const brandColor = /^#[0-9a-f]{6}$/i.test(form.color_distintivo) ? form.color_distintivo : '#1D4ED8';
   const pwd = form.gerente_password || '';
@@ -69,37 +84,46 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
   ];
 
   const change = (key, value) => {
-    setForm(previous => ({ ...previous, [key]: value }));
+    let nextValue = value;
+    if (NUMERIC_FIELDS[key]) {
+      nextValue = String(value || '').replace(/\D/g, '').slice(0, NUMERIC_FIELDS[key]);
+    }
+    if (key === 'logo_url') setLogoBroken(false);
+    setForm(previous => ({ ...previous, [key]: nextValue }));
     setErrors(previous => ({ ...previous, [key]: '' }));
     setError('');
   };
 
-  const field = (key, label, options = {}) => (
-    <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.28rem', fontSize: '0.86rem', fontWeight: 600, color: '#1E293B' }}>
-      <span>{label}</span>
-      <input
-        name={key}
-        aria-label={label}
-        value={form[key]}
-        {...options}
-        disabled={busy}
-        aria-invalid={Boolean(errors[key])}
-        aria-describedby={errors[key] ? `error-${key}` : undefined}
-        onChange={event => change(key, event.target.value)}
-        style={{
-          padding: options.type === 'color' ? '0.25rem' : '0.58rem 0.72rem',
-          borderRadius: '8px',
-          border: `1.5px solid ${errors[key] ? '#DC2626' : '#CBD5E1'}`,
-          fontSize: '0.9rem',
-          color: '#0F172A',
-          background: '#FFFFFF',
-          ...(options.type === 'color' ? { height: '42px', width: '76px', cursor: 'pointer' } : {}),
-          ...(options.style || {})
-        }}
-      />
-      {errors[key] && <span id={`error-${key}`} className="inline-error" style={{ fontSize: '0.78rem' }}>{errors[key]}</span>}
-    </label>
-  );
+  const field = (key, label, options = {}) => {
+    const { hint, ...inputOptions } = options;
+    return (
+      <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.28rem', fontSize: '0.86rem', fontWeight: 600, color: '#1E293B' }}>
+        <span>{label}</span>
+        <input
+          name={key}
+          aria-label={label}
+          value={form[key]}
+          {...inputOptions}
+          disabled={busy}
+          aria-invalid={Boolean(errors[key])}
+          aria-describedby={errors[key] ? `error-${key}` : undefined}
+          onChange={event => change(key, event.target.value)}
+          style={{
+            padding: inputOptions.type === 'color' ? '0.25rem' : '0.58rem 0.72rem',
+            borderRadius: '8px',
+            border: `1.5px solid ${errors[key] ? '#DC2626' : '#CBD5E1'}`,
+            fontSize: '0.9rem',
+            color: '#0F172A',
+            background: '#FFFFFF',
+            ...(inputOptions.type === 'color' ? { height: '42px', width: '76px', cursor: 'pointer' } : {}),
+            ...(inputOptions.style || {})
+          }}
+        />
+        {!errors[key] && hint}
+        {errors[key] && <span id={`error-${key}`} className="inline-error" style={{ fontSize: '0.78rem' }}>{errors[key]}</span>}
+      </label>
+    );
+  };
 
   const validate = current => {
     const next = cooperativeErrors(form, current, editing);
@@ -193,11 +217,12 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-          {safeImageUrl(form.logo_url) ? (
+          {safeImageUrl(form.logo_url) && !logoBroken ? (
             <img
               className="cr01-logo"
               src={form.logo_url}
               alt={`Logo de ${form.nombre || 'la cooperativa'}`}
+              onError={() => setLogoBroken(true)}
               style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 10, border: `2px solid ${brandColor}`, background: '#fff', margin: 0 }}
             />
           ) : (
@@ -299,7 +324,22 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
           {step === 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
               {field('nombre', 'Nombre de la cooperativa', { maxLength: 150, placeholder: 'Ej. Cooperativa Express Tungurahua' })}
-              {field('ruc', 'RUC (13 dígitos, termina en 001)', { inputMode: 'numeric', maxLength: 13, placeholder: '1890012345001' })}
+              {field('ruc', 'RUC (13 dígitos, termina en 001)', {
+                inputMode: 'numeric',
+                maxLength: 13,
+                placeholder: 'Ej. 1890012345001 (3.er dígito 9 para cooperativa)',
+                hint: form.ruc ? (
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: rucCheck?.valido ? '#15803D' : '#B45309' }}>
+                    {rucCheck?.valido
+                      ? `✓ RUC ecuatoriano válido (${rucCheck.tipo})`
+                      : `${form.ruc.length}/13 dígitos · ${rucCheck?.error}`}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: 500 }}>
+                    Para cooperativas usa 3.er dígito 9 (ej. 1890012345001) o cédula válida + 001.
+                  </span>
+                )
+              })}
               {field('resolucion_ant', 'Resolución ANT', { placeholder: 'ANT-RES-2026-001', maxLength: 30 })}
               {field('telefono', 'Celular de contacto (09...)', { inputMode: 'tel', maxLength: 10, placeholder: '0991234567' })}
               {field('correo', 'Correo institucional de la cooperativa', { type: 'email', maxLength: 100, placeholder: 'info@cooperativa.com' })}
@@ -327,7 +367,38 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
                   ))}
                 </div>
               </div>
-              {field('logo_url', 'URL del logo (opcional)', { type: 'url', maxLength: 2000, placeholder: 'https://…/logo.png' })}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {field('logo_url', 'URL del logo (opcional)', { type: 'text', maxLength: 2000, placeholder: 'https://…/logo.png o sube una imagen' })}
+                <ImageUploadControl
+                  user={user}
+                  compact
+                  disabled={busy}
+                  buttonLabel="Subir logo desde tu dispositivo"
+                  onUploaded={(urls) => {
+                    if (urls[0]) change('logo_url', urls[0]);
+                  }}
+                />
+                {form.logo_url && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => change('logo_url', '')}
+                    style={{
+                      alignSelf: 'flex-start',
+                      background: '#FEF2F2',
+                      border: '1px solid #FCA5A5',
+                      color: '#B91C1C',
+                      borderRadius: '7px',
+                      padding: '0.25rem 0.6rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Quitar logo
+                  </button>
+                )}
+              </div>
               <label style={{ display: 'flex', flexDirection: 'column', gap: '0.28rem', fontSize: '0.86rem', fontWeight: 600, color: '#1E293B' }}>
                 <span>Entidad bancaria</span>
                 <select
@@ -405,7 +476,20 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
                   {field('gerente_nombre', 'Nombre completo del gerente', { maxLength: 100, placeholder: 'Ej. Ing. María Fernanda López' })}
-                  {field('gerente_cedula', 'Cédula del gerente (Módulo 10)', { inputMode: 'numeric', maxLength: 10, placeholder: '1801234567' })}
+                  {field('gerente_cedula', 'Cédula del gerente (Módulo 10)', {
+                    inputMode: 'numeric',
+                    maxLength: 10,
+                    placeholder: '1801234567',
+                    hint: cedulaClean ? (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: cedulaValida ? '#15803D' : cedulaClean.length === 10 ? '#DC2626' : '#64748B' }}>
+                        {cedulaValida
+                          ? '✓ Cédula ecuatoriana válida (10 dígitos · Módulo 10)'
+                          : cedulaClean.length === 10
+                            ? '✕ Tiene 10 dígitos pero el dígito verificador Módulo 10 no coincide.'
+                            : `${cedulaClean.length}/10 dígitos`}
+                      </span>
+                    ) : null
+                  })}
                   {field('gerente_correo', 'Correo de acceso del gerente', { type: 'email', autoComplete: 'off', maxLength: 100, placeholder: 'gerente@cooperativa.com' })}
                   {field('gerente_telefono', 'Celular del gerente', { inputMode: 'tel', maxLength: 10, placeholder: '0991234567' })}
                 </div>

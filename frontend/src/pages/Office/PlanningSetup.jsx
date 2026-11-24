@@ -57,9 +57,9 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
     setMessage('');
     try {
       await planningRequest(usuario, path, { method: 'POST', data: { ...data, cooperativa_id: Number(cooperativaId) } });
+      await onChanged();
       reset();
       setMessage('✓ Registro guardado correctamente.');
-      onChanged();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -79,9 +79,9 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
         method: 'POST',
         data: { cooperativa_id: Number(cooperativaId), clase, miembros: [selectedId] }
       });
+      await onChanged();
       setAddSelections(prev => ({ ...prev, [key]: '' }));
       setMessage(clase === 'BUSES' ? '✓ Bus añadido al grupo correctamente.' : '✓ Frecuencia añadida al grupo correctamente.');
-      onChanged();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -100,8 +100,8 @@ export default function PlanningSetup({ usuario, cooperativaId, catalogo, onChan
         `/planificacion/grupos/${groupId}/miembros/${memberId}?cooperativa_id=${Number(cooperativaId)}&clase=${clase}`,
         { method: 'DELETE' }
       );
+      await onChanged();
       setMessage('✓ Miembro retirado del grupo.');
-      onChanged();
     } catch (err) {
       setError(err.message);
     } finally {
