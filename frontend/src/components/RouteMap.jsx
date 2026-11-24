@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Navigation, Info } from 'lucide-react';
+import { Navigation, Info } from 'lucide-react';
+import { normalize } from '../lib/format.js';
 
-// Coordenadas geográficas oficiales de ciudades y terminales en Ecuador
 const COORDENADAS_ECUADOR = {
   'Pelileo': [-1.3325, -78.5439],
   'Ambato': [-1.2491, -78.6168],
@@ -18,47 +18,62 @@ const COORDENADAS_ECUADOR = {
   'Cuenca': [-2.9001, -79.0059],
   'Loja': [-3.9931, -79.2042],
   'Puyo': [-1.4883, -77.9986],
-  'Machala': [-3.2586, -79.9554]
+  'Machala': [-3.2586, -79.9554],
+  'Manta': [-0.9677, -80.7089],
+  'Portoviejo': [-1.0546, -80.4545],
+  'Ibarra': [0.3517, -78.1223],
+  'Otavalo': [0.2346, -78.2625],
+  'Tulcán': [0.8119, -77.7173],
+  'Esmeraldas': [0.9682, -79.6517],
+  'Santo Domingo': [-0.2531, -79.1754],
+  'Guaranda': [-1.5926, -79.0010],
+  'Azogues': [-2.7397, -78.8486],
+  'Tena': [-0.9938, -77.8129],
+  'Macas': [-2.3087, -78.1114],
+  'Quevedo': [-1.0286, -79.4635],
+  'Babahoyo': [-1.8022, -79.5344],
+  'Salinas': [-2.2145, -80.9515],
+  'Cayambe': [0.0408, -78.1452],
+  'Nueva Loja': [0.0847, -76.8828],
+  'Salcedo': [-1.0455, -78.5906],
+  'Machachi': [-0.5101, -78.5671],
+  'Alausi': [-2.2033, -78.8471]
 };
 
-// Paradas intermedias frecuentes según resolución ANT
-const PARADAS_INTERMEDIAS = {
-  'Pelileo-Ambato': [
-    { nombre: 'Salasaca (Parada Artesanal)', coord: [-1.2917, -78.5806] },
-    { nombre: 'Totoras', coord: [-1.2650, -78.5980] }
-  ],
-  'Ambato-Quito': [
-    { nombre: 'Latacunga (Terminal)', coord: [-0.9333, -78.6167] },
-    { nombre: 'Machachi (Peaje)', coord: [-0.5100, -78.5670] }
-  ],
-  'Ambato-Guayaquil': [
-    { nombre: 'Pallatanga', coord: [-1.9833, -78.9667] },
-    { nombre: 'Bucay', coord: [-2.2000, -79.1333] }
-  ]
-};
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function resolverCoord(ciudad) {
   if (!ciudad) return null;
-  const c = ciudad.trim();
+  const clean = normalize(ciudad);
   for (const [key, val] of Object.entries(COORDENADAS_ECUADOR)) {
-    if (c.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(c.toLowerCase())) {
-      return val;
-    }
+    const normKey = normalize(key);
+    if (clean === normKey) return val;
+  }
+  for (const [key, val] of Object.entries(COORDENADAS_ECUADOR)) {
+    const normKey = normalize(key);
+    if (clean.includes(normKey) || normKey.includes(clean)) return val;
   }
   return null;
 }
 
-export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', cooperativa = '' }) {
+export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', paradasIntermedias = [] }) {
   const mapContainer = useRef(null);
   const mapInstance = useRef(null);
 
-  const coordOrigen = resolverCoord(origen) || COORDENADAS_ECUADOR['Pelileo'];
-  const coordDestino = resolverCoord(destino) || COORDENADAS_ECUADOR['Ambato'];
+  const coordOrigen = resolverCoord(origen) || COORDENADAS_ECUADOR['Ambato'];
+  const coordDestino = resolverCoord(destino) || COORDENADAS_ECUADOR['Quito'];
 
-  const rutaKey = `${origen}-${destino}`;
-  const rutaKeyInvertida = `${destino}-${origen}`;
-  const paradas = (tipoServicio === 'PARADAS' || tipoServicio?.includes('PARADAS'))
-    ? (PARADAS_INTERMEDIAS[rutaKey] || PARADAS_INTERMEDIAS[rutaKeyInvertida] || [])
+  const paradasReales = Array.isArray(paradasIntermedias)
+    ? paradasIntermedias
+        .map((nombre) => ({ nombre, coord: resolverCoord(nombre) }))
+        .filter((p) => Boolean(p.coord))
     : [];
 
   useEffect(() => {
@@ -69,7 +84,6 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
       mapInstance.current = null;
     }
 
-    // Inicializar mapa centrado en Tungurahua / Ecuador
     const map = L.map(mapContainer.current, {
       center: [-1.28, -78.58],
       zoom: 11,
@@ -77,12 +91,10 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
     });
     mapInstance.current = map;
 
-    // Capa de mosaicos OpenStreetMap estándar (100% gratuita y sin API keys)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
-    // Iconos personalizados con estilos SVG limpios
     const createCustomIcon = (bgColor, label) => L.divIcon({
       className: 'custom-map-marker',
       html: `<div style="background-color: ${bgColor}; color: white; border: 2px solid white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; box-shadow: 0 3px 6px rgba(0,0,0,0.3);">${label}</div>`,
@@ -94,24 +106,23 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
     const endIcon = createCustomIcon('#b91c1c', 'B');
     const stopIcon = createCustomIcon('#1e40af', '•');
 
-    // Marcador Origen
+    const safeOrigen = escapeHtml(origen || 'Punto de Partida');
+    const safeDestino = escapeHtml(destino || 'Punto de Llegada');
+
     const markerOrigen = L.marker(coordOrigen, { icon: startIcon }).addTo(map);
-    markerOrigen.bindPopup(`<strong>Origen: ${origen || 'Punto de Partida'}</strong><br/>Terminal Autorizado ANT`);
+    markerOrigen.bindPopup(`<strong>Origen: ${safeOrigen}</strong><br/>Terminal Autorizado ANT`);
 
-    // Marcador Destino
     const markerDestino = L.marker(coordDestino, { icon: endIcon }).addTo(map);
-    markerDestino.bindPopup(`<strong>Destino: ${destino || 'Punto de Llegada'}</strong><br/>Terminal Terrestre Oficial`);
+    markerDestino.bindPopup(`<strong>Destino: ${safeDestino}</strong><br/>Terminal Terrestre Oficial`);
 
-    // Marcadores de paradas intermedias
     const puntosRuta = [coordOrigen];
-    paradas.forEach((p) => {
+    paradasReales.forEach((p) => {
       const m = L.marker(p.coord, { icon: stopIcon }).addTo(map);
-      m.bindPopup(`<strong>Parada Intermedia:</strong><br/>${p.nombre}<br/><em>Modalidad con Paradas</em>`);
+      m.bindPopup(`<strong>Parada Intermedia:</strong><br/>${escapeHtml(p.nombre)}<br/><em>Modalidad con Paradas</em>`);
       puntosRuta.push(p.coord);
     });
     puntosRuta.push(coordDestino);
 
-    // Trazar línea de ruta interprovincial
     const polyline = L.polyline(puntosRuta, {
       color: '#1e3a8a',
       weight: 5,
@@ -119,9 +130,8 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
       dashArray: tipoServicio === 'PARADAS' ? '6, 8' : undefined
     }).addTo(map);
 
-    // Ajustar vista para abarcar todos los puntos
     try {
-      map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+      map.fitBounds(polyline.getBounds(), { padding: [40, 40], animate: false });
     } catch {}
 
     return () => {
@@ -130,19 +140,21 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
         mapInstance.current = null;
       }
     };
-  }, [origen, destino, tipoServicio]);
+  }, [origen, destino, tipoServicio, JSON.stringify(paradasIntermedias)]);
+
+  const isParadas = tipoServicio === 'PARADAS' || String(tipoServicio || '').includes('PARADAS');
 
   return (
     <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', backgroundColor: '#ffffff' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Navigation size={18} color="#1e3a8a" />
           <strong style={{ fontSize: '14px', color: '#1e293b' }}>
             Mapa Oficial de Frecuencia ANT: {origen || 'Origen'} &rarr; {destino || 'Destino'}
           </strong>
         </div>
-        <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '9999px', fontWeight: 'bold', backgroundColor: tipoServicio === 'DIRECTO' ? '#dcfce7' : '#e0e7ff', color: tipoServicio === 'DIRECTO' ? '#166534' : '#3730a3' }}>
-          {tipoServicio === 'DIRECTO' ? 'Ruta Directa (Sin Paradas)' : 'Frecuencia con Paradas Intermedias'}
+        <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '9999px', fontWeight: 'bold', backgroundColor: isParadas ? '#e0e7ff' : '#dcfce7', color: isParadas ? '#3730a3' : '#166534' }}>
+          {isParadas ? 'Frecuencia con Paradas Intermedias' : 'Ruta Directa (Sin Paradas)'}
         </span>
       </div>
 
@@ -151,9 +163,9 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', co
       <div style={{ padding: '10px 16px', backgroundColor: '#ffffff', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f1f5f9' }}>
         <Info size={15} color="#3b82f6" />
         <span>
-          {tipoServicio === 'DIRECTO'
-            ? 'Servicio expreso directo de terminal a terminal según Resolución Oficial de la ANT.'
-            : 'Frecuencia corriente con habilitación para paradas intermedias de embarque y desembarque.'}
+          {isParadas
+            ? 'Frecuencia corriente con habilitación para paradas intermedias de embarque y desembarque.'
+            : 'Servicio expreso directo de terminal a terminal según Resolución Oficial de la ANT.'}
         </span>
       </div>
     </div>

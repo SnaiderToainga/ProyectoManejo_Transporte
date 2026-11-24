@@ -7,6 +7,7 @@ export const ROLES = {
   SUPERADMIN: 'SUPERADMIN',
   ADMIN_COOP: 'ADMIN_COOP',
   OFICINISTA: 'OFICINISTA',
+  CHOFER: 'CHOFER',
   CLIENTE: 'CLIENTE'
 };
 
@@ -19,6 +20,17 @@ export const ROLES = {
 export function canAccessOffice(user) {
   if (!user || typeof user !== 'object') return false;
   return user.rol === ROLES.OFICINISTA || user.rol === ROLES.SUPERADMIN;
+}
+
+/**
+ * Valida si un usuario tiene permisos para la Cabina del Chofer y Escáner QR.
+ * Permitido para CHOFER y SUPERADMIN (auditoría).
+ * @param {Object|null} user
+ * @returns {boolean}
+ */
+export function canAccessDriver(user) {
+  if (!user || typeof user !== 'object') return false;
+  return user.rol === ROLES.CHOFER || user.rol === ROLES.SUPERADMIN;
 }
 
 /**
@@ -37,6 +49,9 @@ export function canAccessAdmin(user) {
  * @returns {string}
  */
 export function getRedirectRouteForRole(user) {
+  if (canAccessDriver(user) && user.rol === ROLES.CHOFER) {
+    return 'chofer';
+  }
   if (canAccessOffice(user) && user.rol === ROLES.OFICINISTA) {
     return 'oficina';
   }

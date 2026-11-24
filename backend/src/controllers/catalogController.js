@@ -1,5 +1,10 @@
 const db = require('../config/db');
 const { occupiedReservation } = require('../services/seatInventory');
+const { getBusLayout, enrichSeatsWithLayout } = require('../services/busLayoutStore');
+
+function ecuadorToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+}
 
 // Obtener todas las cooperativas
 exports.getCooperativas = async (req, res) => {
@@ -15,10 +20,17 @@ exports.getCooperativas = async (req, res) => {
 exports.getFrecuencias = async (req, res) => {
   try {
     const query = `
-      SELECT f.*, c.nombre as cooperativa_nombre, c.color_distintivo
+      SELECT f.*,
+             (f.es_destacada = true
+              AND (f.patrocinio_inicio IS NULL OR f.patrocinio_inicio <= CURRENT_TIMESTAMP)
+              AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) AS patrocinio_activo,
+             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM frecuencias f
       JOIN cooperativas c ON f.cooperativa_id = c.id
-      WHERE f.activo = true
+      WHERE f.activo = true AND c.activo = true
+      ORDER BY (f.es_destacada = true
+                AND (f.patrocinio_inicio IS NULL OR f.patrocinio_inicio <= CURRENT_TIMESTAMP)
+                AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) DESC, f.id ASC
     `;
     const result = await db.query(query);
     res.json(result.rows);
@@ -27,52 +39,80 @@ exports.getFrecuencias = async (req, res) => {
   }
 };
 
-// Obtener hoja de ruta / viajes programados para una fecha
-// Obtener hoja de ruta / viajes programados para una fecha con auto-programación diaria
+// Consultar la programación publicada desde la matriz de hojas de ruta.
 exports.getViajesProgramados = async (req, res) => {
-  const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
+  const fecha = req.query.fecha || ecuadorToday();
   try {
-    // 1. Verificar si ya existen viajes programados para la fecha solicitada
-    const checkQuery = await db.query(
-      'SELECT COUNT(*)::int as count FROM programacion_viajes WHERE fecha_viaje = $1',
-      [fecha]
-    );
-
-    // 2. Si no existen, auto-generar la hoja de ruta del día a partir de las frecuencias autorizadas por la ANT
-    if (checkQuery.rows[0].count === 0) {
-      await db.query(`
-        INSERT INTO programacion_viajes (frecuencia_id, bus_id, fecha_viaje, hora_salida_programada, estado)
-        SELECT 
-          f.id,
-          CASE 
-            WHEN f.id = 4 THEN 3 -- Pelileo Express (Bus 3 de 40 asientos)
-            WHEN f.id = 2 THEN 2 -- CITA Carcelén (Bus 2 de 41 asientos)
-            ELSE 1               -- CITA Quitumbe / Guayaquil (Bus 1 de 40 asientos)
-          END as bus_id,
-          $1::date,
-          f.hora_salida,
-          'PROGRAMADO'
-        FROM frecuencias f
-        WHERE f.activo = true
-        ON CONFLICT (bus_id, fecha_viaje, hora_salida_programada) DO NOTHING
-      `, [fecha]);
-    }
-
-    // 3. Consultar y retornar los viajes programados
     const query = `
-      SELECT pv.id as programacion_id, pv.fecha_viaje, pv.hora_salida_programada, pv.estado,
+      SELECT pv.id as programacion_id, pv.bus_id, pv.fecha_viaje, pv.hora_salida_programada, pv.estado,
              f.origen, f.destino, f.precio_base, f.resolucion_ant, f.tipo_servicio,
+             (f.es_destacada = true
+              AND (f.patrocinio_inicio IS NULL OR f.patrocinio_inicio <= CURRENT_TIMESTAMP)
+              AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) AS es_destacada,
+             f.patrocinio_inicio, f.patrocinio_fin,
+             f.paradas_intermedias,
              b.numero_disco, b.placa, b.capacidad, b.tiene_bano_posterior,
-             c.nombre as cooperativa_nombre
+             NULLIF(BTRIM(to_jsonb(b)->>'marca_chasis'), '') AS marca_chasis,
+             NULLIF(BTRIM(to_jsonb(b)->>'carroceria'), '') AS carroceria,
+             NULLIF(BTRIM(to_jsonb(b)->>'socio_nombre'), '') AS socio_nombre,
+             NULLIF(BTRIM(to_jsonb(b)->>'foto_url'), '') AS foto_url,
+             COALESCE(
+               NULLIF(to_jsonb(b)->'fotos', '[]'::jsonb),
+               CASE
+                 WHEN NULLIF(BTRIM(to_jsonb(b)->>'foto_url'), '') IS NOT NULL
+                   THEN jsonb_build_array(BTRIM(to_jsonb(b)->>'foto_url'))
+                 ELSE '[]'::jsonb
+               END
+             ) AS fotos,
+             disponibilidad.asientos_disponibles,
+             disponibilidad.asientos_disponibles_normal,
+             disponibilidad.asientos_disponibles_vip,
+             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
       FROM programacion_viajes pv
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id
       JOIN cooperativas c ON f.cooperativa_id = c.id
-      WHERE pv.fecha_viaje = $1
-      ORDER BY pv.hora_salida_programada ASC
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS asientos_disponibles,
+               COUNT(*) FILTER (WHERE a.categoria = 'NORMAL')::int AS asientos_disponibles_normal,
+               COUNT(*) FILTER (WHERE a.categoria = 'VIP')::int AS asientos_disponibles_vip
+        FROM asientos a
+        WHERE a.bus_id = b.id AND a.activo IS DISTINCT FROM false
+          AND NOT EXISTS (
+            SELECT 1 FROM detalle_boletos db
+            JOIN reservas r ON r.id = db.reserva_id
+            WHERE db.asiento_id = a.id AND r.programacion_id = pv.id
+              AND ${occupiedReservation}
+          )
+      ) disponibilidad ON true
+      WHERE pv.fecha_viaje = $1 AND pv.estado <> 'CANCELADO' AND f.activo = true AND c.activo = true
+      ORDER BY (f.es_destacada = true
+                AND (f.patrocinio_inicio IS NULL OR f.patrocinio_inicio <= CURRENT_TIMESTAMP)
+                AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) DESC,
+               pv.hora_salida_programada ASC
     `;
     const result = await db.query(query, [fecha]);
-    res.json(result.rows);
+    const enriched = result.rows.map((row) => {
+      const layout = getBusLayout(row.bus_id);
+      if (!layout) return row;
+      return {
+        ...row,
+        bus_layout: {
+          plantilla_id: layout.plantilla_id,
+          plantilla_nombre: layout.plantilla_nombre,
+          pisos: layout.pisos,
+          capacidad_total: layout.capacidad_total,
+          capacidad_piso1: layout.capacidad_piso1,
+          columnas: layout.columnas,
+          columnas_piso2: layout.columnas_piso2,
+          pasillo_despues_col: layout.pasillo_despues_col,
+          pasillo_despues_col_piso2: layout.pasillo_despues_col_piso2,
+          celdasBano: layout.celdasBano || [],
+          celdasBloqueadas: layout.celdasBloqueadas || []
+        }
+      };
+    });
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -83,7 +123,8 @@ exports.getAsientosPorViaje = async (req, res) => {
   const { programacionId } = req.params;
   try {
     const query = `
-      SELECT a.id as asiento_id,
+      SELECT pv.bus_id,
+            a.id as asiento_id,
             a.numero_asiento,
             a.fila,
             a.columna,
@@ -102,11 +143,14 @@ exports.getAsientosPorViaje = async (req, res) => {
             END as estado_ocupacion
       FROM programacion_viajes pv
       JOIN asientos a ON a.bus_id = pv.bus_id
-      WHERE pv.id = $1
+      WHERE pv.id = $1 AND a.activo IS DISTINCT FROM false
       ORDER BY a.numero_asiento ASC
     `;
     const result = await db.query(query, [programacionId]);
-    res.json(result.rows);
+    if (result.rows.length === 0) return res.json([]);
+    const busId = result.rows[0].bus_id;
+    const { seats } = enrichSeatsWithLayout(result.rows, busId);
+    res.json(seats);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

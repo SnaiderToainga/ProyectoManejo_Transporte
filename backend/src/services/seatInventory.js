@@ -1,5 +1,5 @@
 const occupiedReservation = `(r.estado = 'PAGADO' OR
-  (r.estado = 'PENDIENTE' AND r.expira_en > statement_timestamp()))`;
+  (r.estado = 'PENDIENTE' AND (r.expira_en > statement_timestamp() OR r.comprobante_url IS NOT NULL)))`;
 
 function seatIds(values) {
   if (!Array.isArray(values) || values.length === 0) return null;
@@ -11,7 +11,7 @@ function seatIds(values) {
 
 async function lockTrip(client, tripId) {
   const result = await client.query(
-    'SELECT id, bus_id FROM programacion_viajes WHERE id = $1 FOR NO KEY UPDATE',
+    'SELECT id, bus_id, estado FROM programacion_viajes WHERE id = $1 FOR NO KEY UPDATE',
     [tripId]
   );
   return result.rows[0];
@@ -19,7 +19,7 @@ async function lockTrip(client, tripId) {
 
 async function tripSeats(client, trip, ids) {
   const result = await client.query(
-    'SELECT id, numero_asiento FROM asientos WHERE bus_id = $1 AND id = ANY($2::int[])',
+    'SELECT id, numero_asiento FROM asientos WHERE bus_id = $1 AND activo IS DISTINCT FROM false AND id = ANY($2::int[])',
     [trip.bus_id, ids]
   );
   return new Map(result.rows.map(seat => [seat.id, seat.numero_asiento]));

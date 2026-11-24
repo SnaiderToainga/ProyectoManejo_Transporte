@@ -1,7 +1,8 @@
 // frontend/src/pages/Admin/PersonalizacionBranding.jsx
 import React, { useState } from 'react';
+import ImageUploadControl from '../../components/ImageUploadControl.jsx';
 
-export default function PersonalizacionBranding({ cooperativas = [], onActualizarCoop, cooperativa = null, onClose = null, onGuardar = null }) {
+export default function PersonalizacionBranding({ cooperativas = [], onActualizarCoop, cooperativa = null, onClose = null, onGuardar = null, user = null }) {
   const lista = cooperativas && cooperativas.length > 0 ? cooperativas : (cooperativa ? [cooperativa] : []);
   const [selectedId, setSelectedId] = useState(cooperativa?.id || lista[0]?.id || 1);
   const coop = cooperativa || lista.find((c) => c.id === Number(selectedId)) || lista[0];
@@ -11,6 +12,8 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
   const [telefono, setTelefono] = useState(coop?.telefono || '');
   const [direccion, setDireccion] = useState(coop?.direccion || '');
   const [guardadoMsg, setGuardadoMsg] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // Paleta de colores institucionales sugeridos
   const coloresSugeridos = [
@@ -34,8 +37,9 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
     }
   };
 
-  const handleGuardarCambios = (e) => {
+  const handleGuardarCambios = async (e) => {
     e.preventDefault();
+    if (saving) return;
     if (coop) {
       const datosActualizados = {
         ...coop,
@@ -44,13 +48,13 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
         telefono,
         direccion
       };
-      if (onGuardar) onGuardar(datosActualizados);
-      if (onActualizarCoop) onActualizarCoop(coop.id, datosActualizados);
-      setGuardadoMsg(true);
-      setTimeout(() => {
-        setGuardadoMsg(false);
-        if (onClose) onClose();
-      }, 1200);
+      setSaving(true); setSaveError(''); setGuardadoMsg(false);
+      try {
+        if (onGuardar) await onGuardar(datosActualizados);
+        if (onActualizarCoop) await onActualizarCoop(coop.id, datosActualizados);
+        setGuardadoMsg(true);
+      } catch (error) { setSaveError(error.message || 'No se pudo guardar la identidad visual.'); }
+      finally { setSaving(false); }
     }
   };
 
@@ -59,34 +63,42 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
   }
 
   return (
-    <div style={onClose ? styles.modalWrapper : {}}>
-      <div style={styles.container}>
+    <div style={onClose ? styles.modalWrapper : {}} onClick={onClose || undefined}>
+      <div
+        role={onClose ? 'dialog' : undefined}
+        aria-modal={onClose ? 'true' : undefined}
+        style={onClose ? { ...styles.container, ...styles.modalSurface } : styles.container}
+        onClick={(e) => e.stopPropagation()}
+      >
         {onClose && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0F172A', fontWeight: '800' }}>Personalización de Identidad Visual · {coop?.nombre}</h2>
             <button
+              type="button"
               onClick={onClose}
-              style={{ background: '#F1F5F9', border: 'none', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontWeight: '700', color: '#475569' }}
+              style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontWeight: '700', color: '#0F172A' }}
             >
               ✕ Cerrar
             </button>
           </div>
         )}
-      {/* Selector de Cooperativa */}
-      <div style={styles.selectorBar}>
-        <label style={styles.selectorLabel}>Cooperativa seleccionada:</label>
-        <select
-          value={selectedId}
-          onChange={(e) => handleSelectCoop(e.target.value)}
-          style={styles.selectCoop}
-        >
-          {lista.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nombre} ({c.ruc})
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Selector de Cooperativa (Solo visible si no está fijada una cooperativa única - COOP-17) */}
+      {!cooperativa && lista.length > 1 && (
+        <div style={styles.selectorBar}>
+          <label style={styles.selectorLabel}>Cooperativa seleccionada:</label>
+          <select
+            value={selectedId}
+            onChange={(e) => handleSelectCoop(e.target.value)}
+            style={styles.selectCoop}
+          >
+            {lista.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre} ({c.ruc})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div style={styles.layoutGrid}>
         {/* PANEL IZQUIERDO: FORMULARIO DE PERSONALIZACIÓN */}
@@ -137,14 +149,67 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
 
             {/* Logotipo */}
             <div style={styles.fieldGroup}>
-              <label style={styles.fieldLabel}>URL del Logotipo Institucional</label>
-              <input
-                type="text"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="https://ejemplo.com/logo-cooperativa.png"
-                style={styles.textInput}
+              <label style={styles.fieldLabel}>Logotipo Institucional (subir archivo o pegar URL)</label>
+              <ImageUploadControl
+                user={user}
+                compact
+                disabled={saving}
+                buttonLabel="Subir logotipo desde tu dispositivo"
+                onUploaded={(urls) => {
+                  if (urls[0]) setLogoUrl(urls[0]);
+                }}
               />
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://ejemplo.com/logo-cooperativa.png o sube un archivo arriba"
+                  style={{ ...styles.textInput, flex: 1 }}
+                />
+                {logoUrl && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setLogoUrl('')}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #FCA5A5',
+                      background: '#FEF2F2',
+                      color: '#B91C1C',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '10px', padding: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                {logoUrl ? (
+                  <img
+                    key={`logo-form-${logoUrl}`}
+                    src={logoUrl}
+                    alt={`Vista previa ${coop?.nombre}`}
+                    style={{ width: '84px', height: '84px', borderRadius: '14px', objectFit: 'contain', backgroundColor: '#FFFFFF', border: `3px solid ${color}`, padding: '4px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}
+                    onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : (
+                  <div style={{ width: '84px', height: '84px', borderRadius: '14px', backgroundColor: color, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '1.6rem' }}>
+                    {String(coop?.nombre || 'CO').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0F172A' }}>Vista Previa del Logotipo Institucional</div>
+                  <div style={{ fontSize: '0.76rem', color: '#64748B', marginTop: '2px' }}>
+                    Este logotipo se mostrará en grande en el encabezado de gerencia, en el directorio de cooperativas y en los resultados de búsqueda del cliente.
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Teléfono y Dirección */}
@@ -176,8 +241,9 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
               </div>
             )}
 
-            <button type="submit" style={styles.submitBtn}>
-              Actualizar Identidad Institucional
+            {saveError && <p role="alert" className="inline-error">{saveError}</p>}
+            <button type="submit" style={styles.submitBtn} disabled={saving}>
+              {saving ? 'Guardando…' : 'Actualizar Identidad Institucional'}
             </button>
           </form>
         </div>
@@ -195,14 +261,16 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
               <div style={styles.ticketCoopInfo}>
                 {logoUrl && (
                   <img
+                    key={`logo-ticket-${logoUrl}`}
                     src={logoUrl}
                     alt="Logo"
                     style={styles.ticketLogo}
-                    onError={(e) => { e.target.style.display = 'none'; }}
+                    onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 )}
                 <div style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: '13px' }}>
-                  {coop.nombre.toUpperCase()}
+                  {String(coop?.nombre || '').toUpperCase()}
                 </div>
               </div>
               <div style={styles.ticketAntText}>
@@ -218,7 +286,7 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                   <div style={styles.ticketRoute}>AMBATO ➔ QUITO (QUITUMBE)</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={styles.ticketLabel}>CÓDIGO RESERVA</span>
+                  <span style={styles.ticketLabel}>CÓDIGO DE RESERVA</span>
                   <div style={styles.ticketCode}>RES-9F3A1C</div>
                 </div>
               </div>
@@ -227,12 +295,12 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
 
               <div style={styles.ticketRow}>
                 <div>
-                  <span style={styles.ticketLabel}>FECHA & HORA</span>
-                  <div style={styles.ticketValue}>15/10/2026 | 07:00 AM</div>
+                  <span style={styles.ticketLabel}>FECHA Y HORA</span>
+                  <div style={styles.ticketValue}>15/10/2026 | 07:00</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={styles.ticketLabel}>BUS N° / DISCO</span>
-                  <div style={styles.ticketValue}>Disco 15 (40 Asientos)</div>
+                  <span style={styles.ticketLabel}>BUS N.º / DISCO</span>
+                  <div style={styles.ticketValue}>Disco 15 (40 asientos)</div>
                 </div>
               </div>
 
@@ -242,12 +310,12 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                 <div>
                   <span style={styles.ticketLabel}>PASAJERO</span>
                   <div style={styles.ticketValue}>Joel (Estudiante UTA)</div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>CI: 1803456789</div>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>Cédula: 1803456789</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={styles.ticketLabel}>ASIENTO ASIGNADO</span>
                   <div style={{ ...styles.seatBadge, color: color }}>
-                    N° 04 (VIP)
+                    N.º 04 (VIP)
                   </div>
                 </div>
               </div>
@@ -289,10 +357,18 @@ const styles = {
     backdropFilter: 'blur(4px)',
     zIndex: 9999,
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    padding: '1.5rem',
+    padding: '1.5rem 1rem',
     overflowY: 'auto'
+  },
+  modalSurface: {
+    width: 'min(980px, 100%)',
+    backgroundColor: '#F8FAFC',
+    borderRadius: '18px',
+    padding: '1.5rem',
+    boxShadow: '0 25px 60px rgba(0, 0, 0, 0.35)',
+    margin: 'auto 0'
   },
   container: {
     display: 'flex',
@@ -470,11 +546,13 @@ const styles = {
     gap: '8px'
   },
   ticketLogo: {
-    width: '26px',
-    height: '26px',
-    borderRadius: '50%',
+    width: '48px',
+    height: '48px',
+    borderRadius: '10px',
     objectFit: 'cover',
-    border: '1px solid rgba(255,255,255,0.4)'
+    backgroundColor: '#FFFFFF',
+    padding: '2px',
+    border: '2px solid rgba(255,255,255,0.85)'
   },
   ticketAntText: {
     fontSize: '9px',

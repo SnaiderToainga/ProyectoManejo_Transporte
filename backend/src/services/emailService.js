@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
+const { escapeHtml, purchaseDate, fareLines } = require('./receiptFormat');
 
 /**
  * Genera el código QR con el enlace directo para visualización móvil nativa
@@ -48,7 +49,12 @@ function guardarBoletoLocal(htmlContent) {
  * Genera la plantilla HTML adaptable del boleto
  */
 function generarPlantillaBoleto(datos, qrSrc, enlaceBoleto) {
-  const { cooperativa, origen, destino, fecha, hora, asientos, total, reservaId } = datos;
+  const { cooperativa, origen, destino, fecha, hora, asientos, total, reservaId } = Object.fromEntries(
+    Object.entries(datos).map(([key, value]) => [key, typeof value === 'string' ? escapeHtml(value) : value])
+  );
+  const breakdown = (datos.boletos || []).map(b => '<p><strong>Asiento ' + escapeHtml(b.numero_asiento) + ' · ' + escapeHtml(b.categoria) + '</strong><br>' + fareLines(b).map(escapeHtml).join('<br>') + '</p>').join('');
+  const purchase = datos.comprado_en ? 'Compra: ' + purchaseDate(datos.comprado_en)
+    : 'Compra: fecha exacta no registrada. Reserva: ' + purchaseDate(datos.creado_en);
   const linkWeb = enlaceBoleto || `https://proyecto-web.online/?codigo=${encodeURIComponent(reservaId)}#boleto`;
 
   return `
@@ -78,7 +84,7 @@ function generarPlantillaBoleto(datos, qrSrc, enlaceBoleto) {
               <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #1e3a8a;">${reservaId}</td>
             </tr>
             <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;">Fecha y Hora:</td>
+              <td style="padding: 8px 0; color: #64748b;">Salida del viaje:</td>
               <td style="padding: 8px 0; text-align: right; color: #334155;">${fecha} · ${hora}</td>
             </tr>
             <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -90,6 +96,8 @@ function generarPlantillaBoleto(datos, qrSrc, enlaceBoleto) {
               <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #16a34a; font-size: 16px;">$${Number(total).toFixed(2)}</td>
             </tr>
           </table>
+          <p style="font-size:12px;color:#475569">${escapeHtml(purchase)}</p>
+          ${breakdown}
 
           <div style="text-align: center; padding: 16px; background-color: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
             <p style="margin: 0 0 10px; font-weight: bold; color: #1e293b; font-size: 13px;">Presenta este código QR o pulsa el enlace para ver tu boleto oficial:</p>
@@ -240,6 +248,7 @@ async function enviarBoletoEmail(datos) {
 }
 
 module.exports = {
+  generarPlantillaBoleto,
   generarCodigoQR,
   enviarBoletoEmail
 };

@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import { BusFront, Ticket, Shield, Menu, X } from 'lucide-react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { BusFront, Ticket, Shield, Menu, X, User, LogOut } from 'lucide-react';
 import SearchTrips from './pages/Client/SearchTrips.jsx';
-import SeatSelection from './pages/Client/SeatSelection.jsx';
-import Checkout from './pages/Client/Checkout.jsx';
-import TicketLookup from './pages/Client/TicketLookup.jsx';
-import HistorialCompras from './pages/Client/HistorialCompras.jsx';
-import Login from './pages/Admin/Login.jsx';
-import GestionCooperativas from './pages/Admin/GestionCooperativas.jsx';
-import OfficeDashboard from './pages/Office/OfficeDashboard';
 import { recalledCode } from './lib/reservation.js';
-import { isDemo } from './lib/api.js';
-import { canAccessOffice } from './lib/authGuard.js';
+import { api, isDemo } from './lib/api.js';
+import { canAccessOffice, canAccessDriver, canAccessAdmin } from './lib/authGuard.js';
+import { loadSelection, saveSelection, selectionKey } from './lib/purchaseFlow.js';
+
+const SeatSelection = lazy(() => import('./pages/Client/SeatSelection.jsx'));
+const Checkout = lazy(() => import('./pages/Client/Checkout.jsx'));
+const HistorialCompras = lazy(() => import('./pages/Client/HistorialCompras.jsx'));
+const CustomerAccount = lazy(() => import('./pages/Client/CustomerAccount.jsx'));
+const Login = lazy(() => import('./pages/Admin/Login.jsx'));
+const GestionCooperativas = lazy(() => import('./pages/Admin/GestionCooperativas.jsx'));
+const OfficeDashboard = lazy(() => import('./pages/Office/OfficeDashboard'));
+const ChoferPanel = lazy(() => import('./pages/Driver/ChoferPanel.jsx'));
 
 const isHistoryHash = hash => hash === '#mis-compras' || hash.startsWith('#mis-compras?');
 const historyTokenFromHash = () => isHistoryHash(window.location.hash)
@@ -18,9 +21,14 @@ const historyTokenFromHash = () => isHistoryHash(window.location.hash)
   : '';
 
 export default function App() {
-  const [trip, setTrip] = useState(null);
-  const [category, setCategory] = useState('');
+  const [restored] = useState(() => { try { return loadSelection(sessionStorage, Date.now(), isDemo); } catch { return null; } });
+  const [trip, setTrip] = useState(restored?.trip || null);
+  const [category, setCategory] = useState(restored?.category || '');
+  const [selectedIds, setSelectedIds] = useState(restored?.ids || []);
+  const [checkoutDraft, setCheckoutDraft] = useState(null);
+  const [reserved, setReserved] = useState(false);
   const [seats, setSeats] = useState([]);
+  useEffect(() => { try { saveSelection(sessionStorage, reserved ? null : trip, category, selectedIds, Date.now(), isDemo); } catch {} }, [trip, category, selectedIds, reserved]);
   const getUrlCode = () => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -32,6 +40,59 @@ export default function App() {
 
   const [code, setCode] = useState(getUrlCode);
   const [historyToken, setHistoryToken] = useState(historyTokenFromHash);
+  const [customerToken, setCustomerToken] = useState(() => {
+    try {
+      return sessionStorage.getItem('transporte_cliente_token') || localStorage.getItem('transporte_cliente_token') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [customer, setCustomer] = useState(null);
+  const [customerError, setCustomerError] = useState('');
+  const customerFirstName = customerToken && customer?.nombre
+    ? customer.nombre.trim().split(/\s+/)[0]
+    : '';
+  const clearCustomer = () => {
+    setCustomerToken(''); setHistoryToken(''); setCustomer(null); setCustomerError(''); setCheckoutDraft(null);
+    try {
+      sessionStorage.removeItem('transporte_cliente_token');
+      localStorage.removeItem('transporte_cliente_token');
+    } catch {}
+  };
+  const handleCustomerSession = (result) => {
+    setCustomerToken(result.token); setCustomer(result.cliente); setCustomerError('');
+    try {
+      sessionStorage.setItem('transporte_cliente_token', result.token);
+      localStorage.setItem('transporte_cliente_token', result.token);
+    } catch {}
+    if (trip && page === 'mi-cuenta') {
+      setPage('search');
+      window.location.hash = 'buscar';
+      window.scrollTo(0, 0);
+    }
+  };
+  useEffect(() => {
+    if (!customerToken) return;
+    const controller = new AbortController();
+    api.customerProfile(customerToken, controller.signal).then(result => {
+      if (!controller.signal.aborted) {
+        if (!result.cliente?.id) throw new Error('No se pudo verificar la cuenta de cliente.');
+        setCustomer(result.cliente); setCustomerError('');
+      }
+    }).catch(error => {
+      if (!controller.signal.aborted) {
+        if ([401, 403].includes(error.status)) {
+          setCustomerToken(''); setCustomer(null);
+          try {
+            sessionStorage.removeItem('transporte_cliente_token');
+            localStorage.removeItem('transporte_cliente_token');
+          } catch {}
+        }
+        setCustomerError('Tu sesión de cliente expiró o no se pudo verificar. Inicia sesión nuevamente para comprar.');
+      }
+    });
+    return () => controller.abort();
+  }, [customerToken]);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef(null);
 
@@ -47,13 +108,21 @@ export default function App() {
     const path = window.location.pathname;
     const hash = window.location.hash;
     if (isHistoryHash(hash)) return 'mis-compras';
+    if (hash === '#mi-cuenta') return 'mi-cuenta';
     let auth = null;
     try {
       auth = JSON.parse(localStorage.getItem('transporte_auth'));
     } catch {}
 
-    if (path === '/admin' || hash === '#admin') return 'admin';
+    if (path === '/admin' || hash === '#admin') return canAccessAdmin(auth) ? 'admin' : 'login';
     if (path === '/login' || hash === '#login') return 'login';
+    if (path === '/chofer' || hash === '#chofer') {
+      if (!canAccessDriver(auth)) {
+        window.location.hash = 'login';
+        return 'login';
+      }
+      return 'chofer';
+    }
     if (path === '/oficina' || hash === '#oficina') {
       if (!canAccessOffice(auth)) {
         window.location.hash = 'login';
@@ -88,14 +157,24 @@ export default function App() {
     window.location.hash = 'mis-compras';
     window.scrollTo(0, 0);
   };
+  const goCustomer = () => { setPage('mi-cuenta'); window.location.hash = 'mi-cuenta'; window.scrollTo(0, 0); };
+  const resumePurchase = () => { setPage('search'); window.location.hash = 'buscar'; window.scrollTo(0, 0); };
 
   const goSearch = () => {
     setMenuOpen(false);
     setTrip(null);
     setSeats([]);
+    setSelectedIds([]);
+    setCheckoutDraft(null);
+    setReserved(false);
     setCode('');
     setPage('search');
-    window.location.hash = 'buscar';
+    if (window.location.search || window.location.pathname !== '/') {
+      const keepDemo = isDemo ? '?demo=1' : '';
+      window.history.replaceState(null, '', `/${keepDemo}#buscar`);
+    } else {
+      window.location.hash = 'buscar';
+    }
     window.scrollTo(0, 0);
   };
 
@@ -130,6 +209,18 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  const goChofer = () => {
+    setMenuOpen(false);
+    if (!canAccessDriver(usuario)) {
+      goLogin('Acceso restringido: Se requieren credenciales de Chofer o Administrador');
+      return;
+    }
+    setAuthError('');
+    setPage('chofer');
+    window.location.hash = 'chofer';
+    window.scrollTo(0, 0);
+  };
+
   useEffect(() => {
     const change = () => {
       setMenuOpen(false);
@@ -141,10 +232,32 @@ export default function App() {
           window.history.replaceState(null, '', '#mis-compras');
         }
         setPage('mis-compras');
+      } else if (hash === '#mi-cuenta') {
+        setPage('mi-cuenta');
       } else if (hash === '#admin') {
-        setPage('admin');
+        let stored = null;
+        try { stored = JSON.parse(localStorage.getItem('transporte_auth')); } catch {}
+        if (!canAccessAdmin(stored)) {
+          setAuthError('Acceso restringido a administración de cooperativas.'); setPage('login'); window.location.hash = 'login';
+        } else setPage('admin');
       } else if (hash === '#login') {
         setPage('login');
+      } else if (hash === '#chofer') {
+        const storedUser = (() => {
+          try {
+            return JSON.parse(localStorage.getItem('transporte_auth'));
+          } catch {
+            return null;
+          }
+        })();
+        if (!canAccessDriver(storedUser)) {
+          setAuthError('Acceso restringido: Se requieren credenciales de Chofer o Administrador');
+          setPage('login');
+          window.location.hash = 'login';
+          return;
+        }
+        setAuthError('');
+        setPage('chofer');
       } else if (hash === '#oficina') {
         const storedUser = (() => {
           try {
@@ -161,14 +274,12 @@ export default function App() {
         }
         setAuthError('');
         setPage('oficina');
-      } else if (hash === '#boleto' || getUrlCode()) {
+      } else if (hash === '#boleto' || (hash !== '#buscar' && getUrlCode())) {
         const directCode = getUrlCode();
         if (directCode) setCode(directCode);
         setPage('ticket');
       } else {
         setPage('search');
-        setTrip(null);
-        setSeats([]);
       }
     };
     window.addEventListener('hashchange', change);
@@ -214,43 +325,86 @@ export default function App() {
           </button>
 
           <nav id="main-navigation" className={`site-nav flex-wrap ${menuOpen ? 'is-open' : ''}`} aria-label="Principal" onClick={() => setMenuOpen(false)}>
-            <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
-              Buscar viaje
-            </button>
-            <button className={`nav-link ${page === 'ticket' ? 'active' : ''}`} onClick={() => goTicket()}>
-              Mi boleto
-            </button>
-            <button className={`nav-link ${page === 'mis-compras' ? 'active' : ''}`} onClick={goHistory}>
-              Mis compras
-            </button>
-            {usuario && (usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
-              <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
-                Taquilla / Oficina
-              </button>
-            )}
-           <button
-            className={`nav-link ${page === 'admin' || page === 'login' ? 'active' : ''}`}
-            onClick={() => {
-              if (usuario) {
-                if (page !== 'admin' && (usuario.rol === 'SUPERADMIN' || usuario.rol === 'ADMIN_COOP')) {
-                  goAdmin();
-                } else {
-                  if (confirm(`Sesión activa como: ${usuario.nombre || usuario.rol}. ¿Deseas cerrar sesión?`)) {
+            {usuario ? (
+              <>
+                <button className={`nav-link ${!['admin', 'oficina', 'chofer', 'login'].includes(page) ? 'active' : ''}`} onClick={goSearch}>
+                  Portal de clientes
+                </button>
+                {(usuario.rol === 'SUPERADMIN' || usuario.rol === 'ADMIN_COOP') && (
+                  <button className={`nav-link ${page === 'admin' ? 'active' : ''}`} onClick={goAdmin}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <Shield size={15} aria-hidden="true" />
+                      {usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : 'Gerencia'}
+                    </span>
+                  </button>
+                )}
+                {(usuario.rol === 'OFICINISTA' || usuario.rol === 'SUPERADMIN') && (
+                  <button className={`nav-link ${page === 'oficina' ? 'active' : ''}`} onClick={goOficina}>
+                    Taquilla / Oficina
+                  </button>
+                )}
+                {(usuario.rol === 'CHOFER' || usuario.rol === 'SUPERADMIN') && (
+                  <button className={`nav-link ${page === 'chofer' ? 'active' : ''}`} onClick={goChofer} style={{ fontWeight: 600 }}>
+                    🚍 Cabina Chofer
+                  </button>
+                )}
+                <button
+                  className="nav-link"
+                  onClick={() => {
                     localStorage.removeItem('transporte_auth');
                     setUsuario(null);
                     goLogin();
-                  }
-                }
-              } else {
-                goLogin();
-              }
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-              <Shield size={15} />
-              {usuario ? (usuario.rol === 'SUPERADMIN' ? 'SuperAdmin' : usuario.rol === 'ADMIN_COOP' ? 'Gerencia' : 'Cerrar Sesión') : 'Administración'}
-            </span>
-          </button>
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <LogOut size={15} aria-hidden="true" />
+                    Cerrar sesión
+                  </span>
+                </button>
+              </>
+            ) : customerFirstName ? (
+              <>
+                <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
+                  Buscar viaje
+                </button>
+                <button
+                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
+                  onClick={goCustomer}
+                >
+                  <span className="nav-account-label">
+                    <User size={15} aria-hidden="true" />
+                    {`Hola, ${customerFirstName}`}
+                  </span>
+                </button>
+                <button className="nav-link" onClick={clearCustomer} title="Cerrar sesión de cliente">
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <LogOut size={15} aria-hidden="true" />
+                    Salir
+                  </span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
+                  Buscar viaje
+                </button>
+                <button
+                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
+                  onClick={goCustomer}
+                >
+                  Mi cuenta
+                </button>
+                <button
+                  className={`nav-link ${page === 'login' ? 'active' : ''}`}
+                  onClick={() => goLogin()}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Shield size={15} aria-hidden="true" />
+                    Administración
+                  </span>
+                </button>
+              </>
+            )}
           </nav>
 
           <span className="header-note">
@@ -260,7 +414,30 @@ export default function App() {
       </header>
 
       <main id="contenido" className="shell main-content">
-        {page === 'admin' ? (
+        <Suspense fallback={<div className="empty-state" role="status">Cargando vista…</div>}>
+        {page === 'chofer' ? (
+          canAccessDriver(usuario) ? (
+            <ChoferPanel
+              usuario={usuario}
+              onVolverInicio={goSearch}
+              onLogout={() => {
+                localStorage.removeItem('transporte_auth');
+                setUsuario(null);
+                goLogin();
+              }}
+            />
+          ) : (
+            <Login
+              alertaSeguridad="Acceso restringido: Se requieren credenciales de Chofer o Administrador"
+              onLoginSuccess={(user) => {
+                setUsuario(user);
+                setAuthError('');
+                setPage('chofer');
+                window.location.hash = 'chofer';
+              }}
+            />
+          )
+        ) : page === 'admin' ? (
           <GestionCooperativas
             usuario={usuario}
             onLogout={() => {
@@ -277,6 +454,9 @@ export default function App() {
               if (ruta === '/oficina' || user?.rol === 'OFICINISTA') {
                 setPage('oficina');
                 window.location.hash = 'oficina';
+              } else if (ruta === '/chofer' || user?.rol === 'CHOFER') {
+                setPage('chofer');
+                window.location.hash = 'chofer';
               } else {
                 goAdmin();
               }
@@ -284,7 +464,7 @@ export default function App() {
           />
         ) : page === 'oficina' ? (
           canAccessOffice(usuario) ? (
-            <OfficeDashboard />
+            <OfficeDashboard usuario={usuario} />
           ) : (
             <Login
               alertaSeguridad="Acceso restringido a personal de taquilla autorizado"
@@ -296,17 +476,67 @@ export default function App() {
               }}
             />
           )
+        ) : page === 'mi-cuenta' || page === 'ticket' ? (
+          <>
+            {customerError && <p role="alert" className="inline-error">{customerError}</p>}
+            <CustomerAccount
+              customer={customer}
+              token={customerToken}
+              pendingTrip={page === 'mi-cuenta' ? trip : null}
+              requireTicketLogin={page === 'ticket'}
+              initialTab={page === 'ticket' ? 'boleto' : 'compras'}
+              initialTicketCode={code}
+              onSession={handleCustomerSession}
+              onLogout={clearCustomer}
+              onHistory={goHistory}
+              onSearch={goSearch}
+              onAdminLogin={() => goLogin()}
+              hasActiveTrip={Boolean(trip)}
+              onContinue={trip ? resumePurchase : goSearch}
+            />
+          </>
         ) : page === 'mis-compras' ? (
-          <HistorialCompras token={historyToken} onClearAccess={() => setHistoryToken('')} onVerBoleto={goTicket} />
-        ) : page === 'ticket' ? (
-          <TicketLookup key={code} initialCode={code} onBack={goSearch} />
+          customer && customerToken ? (
+            <>
+              {trip && <button type="button" className="back-link" onClick={resumePurchase}>Volver a mi compra</button>}
+              <HistorialCompras token={customerToken || historyToken} customer={customer}
+                onAccount={goCustomer} onClearAccess={() => { clearCustomer(); setHistoryToken(''); }} onVerBoleto={goTicket} />
+            </>
+          ) : (
+            <CustomerAccount
+              customer={customer}
+              token={customerToken}
+              requireTicketLogin
+              onSession={handleCustomerSession}
+              onLogout={clearCustomer}
+              onHistory={goHistory}
+              onSearch={goSearch}
+              onAdminLogin={() => goLogin()}
+            />
+          )
+        ) : trip && (!customer || !customerToken) ? (
+          <CustomerAccount
+            customer={customer}
+            token={customerToken}
+            pendingTrip={trip}
+            onSession={handleCustomerSession}
+            onLogout={clearCustomer}
+            onHistory={goHistory}
+            onSearch={goSearch}
+            onAdminLogin={() => goLogin()}
+            hasActiveTrip={false}
+          />
         ) : trip && seats.length ? (
-          <Checkout trip={trip} seats={seats} onBack={() => setSeats([])} onConsult={goTicket} />
+          <Checkout key={selectionKey(trip)} trip={trip} seats={seats} draft={checkoutDraft} onDraftChange={setCheckoutDraft}
+            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
+            onReserved={() => { setReserved(true); setSelectedIds([]); setCheckoutDraft(null); }} />
         ) : trip ? (
           <SeatSelection
             trip={trip}
             initialCategory={category}
-            onBack={() => setTrip(null)}
+            initialSelectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            onBack={goSearch}
             onContinue={(picked) => {
               setSeats(picked);
               window.scrollTo(0, 0);
@@ -314,11 +544,11 @@ export default function App() {
           />
         ) : (
           <>
-            {recalledCode() && (
+            {customer && customerToken && recalledCode() && (
               <div className="resume-banner">
-                ¿Deseas retomar tu reserva?{' '}
+                ¿Deseas revisar tu reserva reciente?{' '}
                 <button className="inline-link" onClick={() => goTicket(recalledCode())}>
-                  Consultar {recalledCode()}
+                  Ver boleto {recalledCode()}
                 </button>
               </div>
             )}
@@ -326,11 +556,19 @@ export default function App() {
               onChoose={(next, filter) => {
                 setTrip(next);
                 setCategory(filter);
+                setSelectedIds([]);
+                setCheckoutDraft(null);
+                setReserved(false);
+                if (!customer || !customerToken) {
+                  setPage('mi-cuenta');
+                  window.location.hash = 'mi-cuenta';
+                }
                 window.scrollTo(0, 0);
               }}
             />
           </>
         )}
+        </Suspense>
       </main>
 
       <footer className="site-footer shell">

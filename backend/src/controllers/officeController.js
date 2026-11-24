@@ -1,9 +1,25 @@
 // backend/src/controllers/officeController.js
-const { enviarBoletoEmail } = require('../services/emailService');
+const { quotePassengers } = require('../services/passengerFares');
+const { notifyReservation } = require('../services/receiptData');
 const { lockTrip, occupiedReservation, occupiedSeats, seatIds, tripSeats } = require('../services/seatInventory');
 const db = require('../config/db');
 const pool = db.pool || db;
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { officeScope, assertOfficeTrip } = require('../services/officeAccess');
+
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+
+function checkLocalReceiptExists(comprobanteUrl) {
+  if (!comprobanteUrl || typeof comprobanteUrl !== 'string') return false;
+  if (/^https?:\/\//i.test(comprobanteUrl)) return true;
+  const clean = comprobanteUrl.replace(/^\/?uploads\//i, '').split('?')[0];
+  if (!clean || clean.includes('..') || clean.includes('/') || clean.includes('\\')) return false;
+  const fullPath = path.resolve(UPLOADS_DIR, clean);
+  if (!fullPath.startsWith(UPLOADS_DIR + path.sep)) return false;
+  return fs.existsSync(fullPath);
+}
 
 // 1. Obtener reservas con comprobante en estado PENDIENTE
 exports.getReservasPendientes = async (req, res) => {
@@ -17,22 +33,23 @@ exports.getReservasPendientes = async (req, res) => {
         r.total AS total_pagado,
         r.estado,
         r.comprobante_url,
+        to_jsonb(r)->>'metodo_pago' AS metodo_pago,
         r.expira_en,
         r.creado_en,
         pv.fecha_viaje,
         pv.hora_salida_programada AS hora_salida,
-        f.origen,
-        f.destino,
+        COALESCE(r.origen_tramo, f.origen) AS origen,
+        COALESCE(r.destino_tramo, f.destino) AS destino,
         c.nombre AS cooperativa_nombre,
         b.numero_disco,
         b.placa,
         COALESCE(
-          (SELECT nombre_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
+          (array_agg(db.nombre_pasajero ORDER BY db.id) FILTER (WHERE db.id IS NOT NULL))[1],
           'Cliente Pasajero'
         ) AS cliente_nombre,
         COALESCE(
-          (SELECT cedula_pasajero FROM detalle_boletos WHERE reserva_id = r.id LIMIT 1),
-          '1801234567'
+          (array_agg(db.cedula_pasajero ORDER BY db.id) FILTER (WHERE db.id IS NOT NULL))[1],
+          ''
         ) AS cliente_cedula,
         COALESCE(
           json_agg(
@@ -41,9 +58,12 @@ exports.getReservasPendientes = async (req, res) => {
               'nombre_pasajero', db.nombre_pasajero,
               'cedula_pasajero', db.cedula_pasajero,
               'precio', db.precio,
+              'tipo_pasajero', db.tipo_pasajero,
+              'tarifa_base', db.tarifa_base,
+              'descuento', db.descuento,
               'numero_asiento', a.numero_asiento,
               'categoria', a.categoria
-            )
+            ) ORDER BY db.id
           ) FILTER (WHERE db.id IS NOT NULL), '[]'
         ) AS pasajeros
       FROM reservas r
@@ -54,11 +74,17 @@ exports.getReservasPendientes = async (req, res) => {
       LEFT JOIN detalle_boletos db ON db.reserva_id = r.id
       LEFT JOIN asientos a ON db.asiento_id = a.id
       WHERE r.estado = 'PENDIENTE'
+        AND (r.comprobante_url IS NOT NULL OR r.expira_en IS NULL OR r.expira_en > statement_timestamp())
+        AND ($1::boolean OR (f.cooperativa_id=$2::int AND b.cooperativa_id=$2::int))
       GROUP BY r.id, pv.id, f.id, c.id, b.id
       ORDER BY r.creado_en DESC;
     `;
-    const { rows } = await pool.query(query);
-    res.json(rows);
+    const { rows } = await pool.query(query, officeScope(req));
+    const enriched = rows.map(row => ({
+      ...row,
+      comprobante_disponible: row.comprobante_url ? checkLocalReceiptExists(row.comprobante_url) : false
+    }));
+    res.json(enriched);
   } catch (error) {
     console.error('Error al obtener reservas pendientes:', error);
     res.status(500).json({ error: 'Error interno al obtener reservas pendientes' });
@@ -72,21 +98,34 @@ exports.validarComprobante = async (req, res) => {
   const accion = body.accion || (req.path && req.path.includes('aprobar') ? 'APROBAR' : req.path && req.path.includes('rechazar') ? 'RECHAZAR' : '');
   const estado = body.estado;
 
-  const aprobar =
-    accion === 'APROBAR' ||
-    estado === 'PAGADO' ||
-    estado === 'APROBADO';
-
-  const nuevoEstado = aprobar ? 'PAGADO' : 'RECHAZADO';
+  const nuevoEstado = accion ? { APROBAR: 'PAGADO', RECHAZAR: 'RECHAZADO' }[accion]
+    : { PAGADO: 'PAGADO', APROBADO: 'PAGADO', RECHAZADO: 'RECHAZADO' }[estado];
+  if (!nuevoEstado) return res.status(400).json({ error: 'Indica si deseas aprobar o rechazar la reserva.' });
+  const aprobar = nuevoEstado === 'PAGADO';
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-    const lookup = await client.query('SELECT programacion_id FROM reservas WHERE id = $1', [id]);
-    const trip = lookup.rowCount && await lockTrip(client, lookup.rows[0].programacion_id);
+    const lookup = await client.query(
+      `SELECT programacion_id, comprobante_url,
+              to_jsonb(reservas)->>'metodo_pago' AS metodo_pago
+       FROM reservas
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+    const reservaLock = lookup.rows[0];
+    const trip = lookup.rowCount && await lockTrip(client, reservaLock.programacion_id);
+    await assertOfficeTrip(client, req, trip);
     if (!trip) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
+    if (aprobar && reservaLock.metodo_pago === 'TARJETA' && !reservaLock.comprobante_url) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Esta reserva corresponde a un pago con tarjeta en pasarela y solo puede confirmarse mediante el proveedor.'
+      });
     }
 
     if (aprobar) {
@@ -107,7 +146,8 @@ exports.validarComprobante = async (req, res) => {
     }
 
     const updateRes = await client.query(
-      `UPDATE reservas SET estado = $1, expira_en = NULL
+      `UPDATE reservas SET estado = $1::varchar, expira_en = NULL,
+         comprado_en = CASE WHEN $1::varchar='PAGADO' THEN statement_timestamp() ELSE comprado_en END
        WHERE id = $2 AND estado = 'PENDIENTE' RETURNING *`,
       [nuevoEstado, id]
     );
@@ -135,70 +175,8 @@ exports.validarComprobante = async (req, res) => {
 
     await client.query('COMMIT');
 
-    // Despacho asíncrono de correo electrónico si la reserva fue aprobada
     if (aprobar) {
-      (async () => {
-        try {
-          const viajeQuery = await pool.query(
-            `SELECT 
-              r.id AS reserva_id,
-              r.codigo_reserva,
-              r.total,
-              u.correo AS email,
-              c.nombre AS cooperativa_nombre,
-              f.origen,
-              f.destino,
-              pv.fecha_viaje,
-              pv.hora_salida_programada,
-              COALESCE(
-                json_agg(
-                  json_build_object(
-                    'numero_asiento', a.numero_asiento,
-                    'nombre_pasajero', db.nombre_pasajero,
-                    'cedula_pasajero', db.cedula_pasajero,
-                    'codigo_qr', db.codigo_qr
-                  )
-                ) FILTER (WHERE db.id IS NOT NULL), '[]'
-              ) AS boletos
-            FROM reservas r
-            LEFT JOIN usuarios u ON r.usuario_id = u.id
-            JOIN programacion_viajes pv ON r.programacion_id = pv.id
-            JOIN frecuencias f ON pv.frecuencia_id = f.id
-            JOIN cooperativas c ON f.cooperativa_id = c.id
-            LEFT JOIN detalle_boletos db ON db.reserva_id = r.id
-            LEFT JOIN asientos a ON db.asiento_id = a.id
-            WHERE r.id = $1
-            GROUP BY r.id, r.codigo_reserva, r.total, u.correo, c.nombre, f.origen, f.destino, pv.fecha_viaje, pv.hora_salida_programada`,
-            [id]
-          );
-
-          if (viajeQuery.rows.length > 0) {
-            const v = viajeQuery.rows[0];
-            const emailDestino = v.email || v.correo || 'pasajero@correo.com';
-            const asientosArray = Array.isArray(v.boletos) && v.boletos.length > 0 
-              ? v.boletos.map(b => `Asiento ${b.numero_asiento}`) 
-              : ['Asiento asignado'];
-
-            const fechaTexto = v.fecha_viaje 
-              ? new Date(v.fecha_viaje).toISOString().split('T')[0] 
-              : 'Fecha confirmada';
-
-            await enviarBoletoEmail({
-              emailDestinatario: emailDestino,
-              cooperativa: v.cooperativa_nombre,
-              origen: v.origen,
-              destino: v.destino,
-              fecha: fechaTexto,
-              hora: v.hora_salida_programada,
-              asientos: asientosArray,
-              total: v.total,
-              reservaId: v.codigo_reserva
-            });
-          }
-        } catch (errEmail) {
-          console.error('Error enviando correo de boleto tras aprobación:', errEmail);
-        }
-      })();
+      notifyReservation(pool, reserva.codigo_reserva).catch(error => console.error('Error al notificar boleto:', error.message));
     }
 
     res.json({
@@ -207,8 +185,8 @@ exports.validarComprobante = async (req, res) => {
     });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error al validar comprobante:', error);
-    res.status(500).json({ error: 'Error interno al validar la reserva' });
+    if (error.status !== 403) console.error('Error al validar comprobante:', error);
+    res.status(error.status === 403 ? 403 : 500).json({ error: error.status === 403 ? error.message : 'Error interno al validar la reserva' });
   } finally {
     client.release();
   }
@@ -216,9 +194,13 @@ exports.validarComprobante = async (req, res) => {
 
 // 3. Venta directa en ventanilla / taquilla (Efectivo, Transferencia, Depósito + Descuentos)
 exports.crearVentaVentanilla = async (req, res) => {
-  const { programacion_id, viaje_id, pasajeros, email, correo } = req.body;
+  const { programacion_id, viaje_id, pasajeros, email, correo } = req.body || {};
   const progId = programacion_id || viaje_id;
   const emailContacto = email || correo;
+  if (emailContacto && (typeof emailContacto !== 'string' || emailContacto.trim().length > 100
+      || !require('../utils/validators').validarEmail(emailContacto))) {
+    return res.status(400).json({ error: 'Ingresa un correo válido.' });
+  }
 
   const ids = Array.isArray(pasajeros) && seatIds(pasajeros.map(p => p?.asiento_id));
   if (!progId || !ids) {
@@ -229,7 +211,8 @@ exports.crearVentaVentanilla = async (req, res) => {
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     const trip = await lockTrip(client, progId);
-    const seats = trip && await tripSeats(client, trip, ids);
+    await assertOfficeTrip(client, req, trip);
+    const seats = trip?.estado === 'PROGRAMADO' && await tripSeats(client, trip, ids);
     if (!seats || seats.size !== ids.length) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Los asientos seleccionados no pertenecen al viaje' });
@@ -242,6 +225,8 @@ exports.crearVentaVentanilla = async (req, res) => {
         asientos_ocupados: occupied
       });
     }
+
+    const quote = await quotePassengers(client, trip, pasajeros, req.body.tramo);
 
     // Asociar usuario si se proporciona correo
     let usuarioId = null;
@@ -263,65 +248,37 @@ exports.crearVentaVentanilla = async (req, res) => {
     }
 
     const codigoReserva = 'TAQ-' + crypto.randomBytes(3).toString('hex').toUpperCase();
-    const total = pasajeros.reduce((acc, p) => acc + Number(p.precio || 0), 0);
+    const total = quote.total;
 
     const insertReserva = await client.query(
-      `INSERT INTO reservas (programacion_id, usuario_id, codigo_reserva, total, estado, comprobante_url)
-       VALUES ($1, $2, $3, $4, 'PAGADO', 'VENTA_VENTANILLA_EFECTIVO')
+      `INSERT INTO reservas (programacion_id, usuario_id, codigo_reserva, total, estado, comprobante_url, comprado_en, origen_tramo, destino_tramo)
+       VALUES ($1, $2, $3, $4, 'PAGADO', 'VENTA_VENTANILLA_EFECTIVO', statement_timestamp(), $5, $6)
        RETURNING *`,
-      [progId, usuarioId, codigoReserva, total]
+      [progId, usuarioId, codigoReserva, total, quote.origen, quote.destino]
     );
 
     const reserva = insertReserva.rows[0];
 
-    for (const p of pasajeros) {
+    for (const p of quote.pasajeros) {
       const qrToken = `QR-${codigoReserva}-${p.cedula_pasajero || p.cedula}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       await client.query(
-        `INSERT INTO detalle_boletos (reserva_id, asiento_id, nombre_pasajero, cedula_pasajero, precio, codigo_qr)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO detalle_boletos (reserva_id, asiento_id, nombre_pasajero, cedula_pasajero, precio, codigo_qr, tipo_pasajero, tarifa_base, descuento)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           reserva.id,
           p.asiento_id,
           p.nombre_pasajero || p.nombre,
           p.cedula_pasajero || p.cedula,
           p.precio,
-          qrToken
+          qrToken, p.tipo_pasajero, p.tarifa_base, p.descuento
         ]
       );
     }
 
     await client.query('COMMIT');
 
-    // Despacho de correo si se ingresó email en taquilla
     if (emailContacto) {
-      (async () => {
-        try {
-          const tripRes = await pool.query(
-            `SELECT c.nombre AS cooperativa, f.origen, f.destino, pv.fecha_viaje, pv.hora_salida_programada
-             FROM programacion_viajes pv
-             JOIN frecuencias f ON pv.frecuencia_id = f.id
-             JOIN cooperativas c ON f.cooperativa_id = c.id
-             WHERE pv.id = $1`,
-            [progId]
-          );
-          if (tripRes.rows.length > 0) {
-            const tr = tripRes.rows[0];
-            await enviarBoletoEmail({
-              emailDestinatario: emailContacto,
-              cooperativa: tr.cooperativa,
-              origen: tr.origen,
-              destino: tr.destino,
-              fecha: new Date(tr.fecha_viaje).toISOString().split('T')[0],
-              hora: tr.hora_salida_programada,
-              asientos: ids.map(id => `Asiento ${seats.get(id)}`),
-              total,
-              reservaId: codigoReserva
-            });
-          }
-        } catch (errEmail) {
-          console.error('Error al despachar correo de taquilla:', errEmail);
-        }
-      })();
+      notifyReservation(pool, codigoReserva).catch(error => console.error('Error al notificar taquilla:', error.message));
     }
 
     res.status(201).json({
@@ -331,8 +288,8 @@ exports.crearVentaVentanilla = async (req, res) => {
     });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error en venta de ventanilla:', error);
-    res.status(500).json({ error: 'Error al registrar la venta en ventanilla' });
+    if (![400,403].includes(error.status)) console.error('Error en venta de ventanilla:', error);
+    res.status([400,403].includes(error.status) ? error.status : 500).json({ error: [400,403].includes(error.status) ? error.message : 'Error al registrar la venta en ventanilla' });
   } finally {
     client.release();
   }
@@ -370,10 +327,12 @@ exports.getHojaRutaHoy = async (req, res) => {
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id
       JOIN cooperativas c ON f.cooperativa_id = c.id
-      WHERE pv.fecha_viaje >= CURRENT_DATE
+      WHERE (($3::date IS NULL AND pv.fecha_viaje >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Guayaquil')::date) OR pv.fecha_viaje=$3::date)
+        AND pv.estado <> 'CANCELADO'
+        AND ($1::boolean OR (f.cooperativa_id=$2::int AND b.cooperativa_id=$2::int))
       ORDER BY pv.fecha_viaje ASC, pv.hora_salida_programada ASC;
     `;
-    const { rows } = await pool.query(query);
+    const { rows } = await pool.query(query, [...officeScope(req), req.query.fecha || null]);
     res.json(rows);
   } catch (error) {
     console.error('Error al obtener hoja de ruta:', error);
@@ -384,29 +343,85 @@ exports.getHojaRutaHoy = async (req, res) => {
 // 5. Actualizar estado de un viaje en la Hoja de Ruta
 exports.actualizarEstadoViaje = async (req, res) => {
   const { id } = req.params;
-  const { estado, estado_viaje } = req.body;
+  const { estado, estado_viaje } = req.body || {};
   const viajeId = parseInt(id, 10);
   if (isNaN(viajeId)) {
     return res.status(400).json({ error: 'ID de viaje inválido' });
   }
-  const nuevoEstado = (estado || estado_viaje || '').toUpperCase();
+  const value = estado || estado_viaje || '';
+  const nuevoEstado = typeof value === 'string' ? value.toUpperCase() : '';
+  const previous = { EN_RUTA: 'PROGRAMADO', FINALIZADO: 'EN_RUTA' }[nuevoEstado];
+  if (!previous) return res.status(400).json({ error: 'Solo se permite iniciar o finalizar un viaje.' });
 
+  const client = await pool.connect();
   try {
-    const { rows, rowCount } = await pool.query(
-      `UPDATE programacion_viajes SET estado = $1 WHERE id = $2 RETURNING *`,
-      [nuevoEstado, viajeId]
-    );
-    if (rowCount === 0) {
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const trip = await lockTrip(client, viajeId);
+    if (!trip) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Viaje programado no encontrado' });
     }
+    await assertOfficeTrip(client, req, trip);
+    const { rows, rowCount } = await client.query(
+      `UPDATE programacion_viajes SET estado = $1, version=version+1 WHERE id = $2 AND estado=$3 RETURNING *`,
+      [nuevoEstado, viajeId, previous]
+    );
+    if (rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'El estado actual del viaje no permite ese cambio.' });
+    }
+    await client.query('COMMIT');
     res.json(rows[0]);
   } catch (error) {
-    console.error('Error al actualizar estado del viaje:', error);
-    res.status(500).json({ error: 'Error al actualizar el estado del viaje' });
+    await client.query('ROLLBACK');
+    if (error.status !== 403) console.error('Error al actualizar estado del viaje:', error);
+    res.status(error.status === 403 ? 403 : 500).json({ error: error.status === 403 ? error.message : 'Error al actualizar el estado del viaje' });
+  } finally {
+    client.release();
   }
 };
 
 exports.aprobarComprobante = exports.validarComprobante;
+
+// 6. Autocompletado de pasajero por cédula en Taquilla (VENT-19)
+exports.buscarPasajeroPorCedula = async (req, res) => {
+  const cedula = String(req.params.cedula || '').trim();
+  if (!/^\d{10}$/.test(cedula)) {
+    return res.status(400).json({ error: 'La cédula debe tener 10 dígitos numéricos.' });
+  }
+  try {
+    const userRes = await pool.query(
+      `SELECT nombre, correo AS email, cedula
+       FROM usuarios
+       WHERE cedula = $1 AND rol = 'CLIENTE'
+       ORDER BY id DESC
+       LIMIT 1`,
+      [cedula]
+    );
+    if (userRes.rows[0]) {
+      return res.json({ pasajero: userRes.rows[0] });
+    }
+    const ticketRes = await pool.query(
+      `SELECT d.nombre_pasajero AS nombre,
+              d.cedula_pasajero AS cedula,
+              u.correo AS email
+       FROM detalle_boletos d
+       JOIN reservas r ON r.id = d.reserva_id
+       LEFT JOIN usuarios u ON u.id = r.usuario_id
+       WHERE d.cedula_pasajero = $1
+       ORDER BY r.creado_en DESC, d.id DESC
+       LIMIT 1`,
+      [cedula]
+    );
+    if (ticketRes.rows[0]) {
+      return res.json({ pasajero: ticketRes.rows[0] });
+    }
+    return res.status(404).json({ error: 'No se encontró un pasajero previo con esa cédula.' });
+  } catch (error) {
+    console.error('Error al buscar pasajero por cédula en taquilla:', error.message);
+    return res.status(500).json({ error: 'No se pudo consultar el pasajero.' });
+  }
+};
 exports.procesarComprobante = exports.validarComprobante;
 exports.validarReserva = exports.validarComprobante;
 exports.actualizarEstadoReserva = exports.validarComprobante;

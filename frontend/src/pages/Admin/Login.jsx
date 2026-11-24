@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { BusFront, Lock, Mail, ShieldAlert, ArrowRight, UserCheck } from 'lucide-react';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'https://transporte-uta-api.onrender.com/api').replace(/\/$/, '');
+const isLocalEnv = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1' || 
+  window.location.hostname.startsWith('192.168.') || 
+  window.location.hostname.startsWith('10.') || 
+  window.location.hostname.startsWith('172.') || 
+  import.meta.env.DEV
+);
+const API_URL = (import.meta.env.VITE_API_URL || (isLocalEnv ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
 
 export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [correo, setCorreo] = useState('');
@@ -10,23 +18,10 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [error, setError] = useState('');
   const [rolDetectado, setRolDetectado] = useState(null);
 
-  const usuariosPrueba = import.meta.env.DEV ? [
-    { rol: 'SUPERADMIN', correo: 'admin@transporteuta.com', label: 'SuperAdmin General' },
-    { rol: 'ADMIN_COOP', correo: 'gerente@cita.com', label: 'Gerente CITA' },
-    { rol: 'ADMIN_COOP', correo: 'gerente@pelileo.com', label: 'Gerente Pelileo' },
-    { rol: 'OFICINISTA', correo: 'taquilla@transporteuta.com', label: 'Oficinista / Taquilla' }
-  ] : [];
-
-  const handleSeleccionarPrueba = (user) => {
-    setCorreo(user.correo);
-    setPassword('');
-    setError('');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!correo.trim() || !password.trim()) {
-      setError('Por favor complete todos los campos');
+      setError('Por favor, completa todos los campos.');
       return;
     }
 
@@ -49,17 +44,16 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
       setRolDetectado(data.usuario.rol);
       localStorage.setItem('transporte_auth', JSON.stringify(data.usuario));
 
-      setTimeout(() => {
-        if (data.usuario.rol === 'OFICINISTA') {
-          // Redirigir al módulo de Taquilla de Daky
-          window.location.hash = 'oficina';
-          if (onLoginSuccess) onLoginSuccess(data.usuario, '/oficina');
-        } else {
-          // SuperAdmin o Administrador de Cooperativa
-          window.location.hash = 'admin';
-          if (onLoginSuccess) onLoginSuccess(data.usuario, '/admin');
-        }
-      }, 700);
+      if (data.usuario.rol === 'OFICINISTA') {
+        window.location.hash = 'oficina';
+        if (onLoginSuccess) onLoginSuccess(data.usuario, '/oficina');
+      } else if (data.usuario.rol === 'CHOFER') {
+        window.location.hash = 'chofer';
+        if (onLoginSuccess) onLoginSuccess(data.usuario, '/chofer');
+      } else {
+        window.location.hash = 'admin';
+        if (onLoginSuccess) onLoginSuccess(data.usuario, '/admin');
+      }
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión');
     } finally {
@@ -74,7 +68,7 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
           <div style={styles.logoBadge}>
             <BusFront size={32} color="#1E40AF" />
           </div>
-          <h2 style={styles.title}>Portal Administrativo</h2>
+          <h2 style={styles.title}>Portal administrativo</h2>
           <p style={styles.subtitle}>Sistema de Transporte Interprovincial UTA</p>
         </div>
 
@@ -98,14 +92,14 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
           <div style={styles.alertSuccess}>
             <UserCheck size={18} color="#065F46" />
             <span style={{ fontSize: '0.875rem', color: '#065F46' }}>
-              Acceso concedido como <strong>{rolDetectado}</strong>. Redirigiendo...
+              Acceso concedido como <strong>{rolDetectado}</strong>. Redirigiendo…
             </span>
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Correo Electrónico</label>
+            <label style={styles.label}>Correo electrónico</label>
             <div style={styles.inputWrapper}>
               <Mail size={18} style={styles.inputIcon} />
               <input
@@ -143,31 +137,14 @@ export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
               cursor: cargando ? 'not-allowed' : 'pointer'
             }}
           >
-            {cargando ? 'Verificando...' : (
+            {cargando ? 'Verificando…' : (
               <>
-                <span>Ingresar al Sistema</span>
+                <span>Ingresar al sistema</span>
                 <ArrowRight size={18} />
               </>
             )}
           </button>
         </form>
-
-        {usuariosPrueba.length > 0 && <div style={styles.quickAccessSection}>
-          <p style={styles.quickAccessTitle}>Cuentas de prueba (ingresa su contraseña):</p>
-          <div style={styles.quickAccessButtons}>
-            {usuariosPrueba.map((u) => (
-              <button
-                key={u.correo}
-                type="button"
-                onClick={() => handleSeleccionarPrueba(u)}
-                style={styles.quickBtn}
-              >
-                <strong>{u.rol}</strong>
-                <span style={{ fontSize: '0.75rem', color: '#64748B' }}>{u.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>}
 
         <div style={styles.footerLink}>
           <a href="#" onClick={(e) => { e.preventDefault(); window.location.hash = 'buscar'; }} style={styles.backLink}>
@@ -302,37 +279,6 @@ const styles = {
     border: 'none',
     marginTop: '0.5rem',
     boxShadow: '0 4px 6px -1px rgba(30, 64, 175, 0.2)'
-  },
-  quickAccessSection: {
-    marginTop: '1.75rem',
-    paddingTop: '1.25rem',
-    borderTop: '1px solid #E2E8F0'
-  },
-  quickAccessTitle: {
-    fontSize: '0.75rem',
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: '0.5rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.025em'
-  },
-  quickAccessButtons: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '0.5rem'
-  },
-  quickBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '0.5rem',
-    backgroundColor: '#F8FAFC',
-    border: '1px solid #CBD5E1',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.75rem',
-    color: '#1E293B',
-    textAlign: 'center'
   },
   footerLink: {
     marginTop: '1.25rem',
