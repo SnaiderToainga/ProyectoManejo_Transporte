@@ -25,16 +25,8 @@ import BusStructures from './BusStructures.jsx';
 import PersonalizacionBranding from './PersonalizacionBranding.jsx';
 import HojaRuta from '../Office/HojaRuta.jsx';
 import { planningRequest } from '../../lib/planningApi.js';
+import { API_BASE as API_URL, resolveMediaUrl } from '../../lib/env.js';
 
-const isLocalEnv = typeof window !== 'undefined' && (
-  window.location.hostname === 'localhost' || 
-  window.location.hostname === '127.0.0.1' || 
-  window.location.hostname.startsWith('192.168.') || 
-  window.location.hostname.startsWith('10.') || 
-  window.location.hostname.startsWith('172.') || 
-  import.meta.env.DEV
-);
-const API_URL = (import.meta.env.VITE_API_URL || (isLocalEnv ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
 
 export default function GestionCooperativas({ usuario: propUsuario, onLogout }) {
   // Detección robusta de sesión y rol
@@ -548,7 +540,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
           ? (cooperativas.find(c => Number(c.id) === Number(coopId)) || cooperativasVisibles[0])
           : null;
         const colorCoop = coopActiva?.color_distintivo || '#1D4ED8';
-        const bgImage = coopActiva?.logo_url;
+        const bgImage = resolveMediaUrl(coopActiva?.logo_url);
 
         return (
           <header
@@ -842,7 +834,7 @@ export default function GestionCooperativas({ usuario: propUsuario, onLogout }) 
                     {coop.logo_url ? (
                       <img
                         key={`card-logo-${coop.id}-${coop.logo_url}`}
-                        src={coop.logo_url}
+                        src={resolveMediaUrl(coop.logo_url)}
                         alt={`Logo ${coop.nombre}`}
                         style={{
                           width: '72px',

@@ -14,7 +14,9 @@ const {
   validarUrlImagenSegura,
   validarColorHex,
   validarCuentaBancaria,
-  validarBanco
+  validarBanco,
+  validarUrlSocialSegura,
+  normalizarWhatsapp
 } = require('../utils/validators');
 
 const VALID_BUS_STATES = new Set(['OPERATIVO', 'MANTENIMIENTO', 'PARADA']);
@@ -23,6 +25,32 @@ function parsePositiveInt(value) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 2147483647 ? parsed : null;
+}
+
+// Canales de soporte y redes sociales de la cooperativa (CR-14).
+// Solo se devuelven los campos enviados, para no tocar columnas si la migración 09 aún no se aplicó.
+const SUPPORT_FIELDS = ['facebook_url', 'instagram_url', 'whatsapp_soporte', 'correo_soporte'];
+
+function supportChannelsFromBody(body = {}) {
+  const fields = {};
+  for (const key of ['facebook_url', 'instagram_url']) {
+    if (body[key] === undefined) continue;
+    if (!validarUrlSocialSegura(body[key])) {
+      return { error: `La URL de ${key === 'facebook_url' ? 'Facebook' : 'Instagram'} debe empezar con http:// o https:// y no puede contener credenciales.` };
+    }
+    fields[key] = cleanOptionalText(body[key]);
+  }
+  if (body.whatsapp_soporte !== undefined) {
+    const phone = normalizarWhatsapp(body.whatsapp_soporte);
+    if (phone === null) return { error: 'El WhatsApp de soporte debe tener entre 9 y 15 dígitos (ej. 0991234567 o +593991234567).' };
+    fields.whatsapp_soporte = phone || null;
+  }
+  if (body.correo_soporte !== undefined) {
+    const mail = cleanOptionalText(body.correo_soporte);
+    if (mail && (mail.length > 120 || !validarEmail(mail))) return { error: 'El correo de soporte no tiene un formato válido.' };
+    fields.correo_soporte = mail ? mail.toLowerCase() : null;
+  }
+  return { fields };
 }
 
 function cleanOptionalText(value) {
@@ -262,6 +290,9 @@ exports.crearCooperativa = async (req, res) => {
     return res.status(400).json({ error: 'La cuenta bancaria debe tener entre 6 y 30 dígitos numéricos.' });
   }
 
+  const soporte = supportChannelsFromBody(req.body || {});
+  if (soporte.error) return res.status(400).json({ error: soporte.error });
+
   if (!gerente || typeof gerente !== 'object') {
     return res.status(400).json({ error: 'Los datos completos del usuario gerente son obligatorios.' });
   }
@@ -309,7 +340,16 @@ exports.crearCooperativa = async (req, res) => {
       ]
     );
 
-    const nuevaCoop = coopRes.rows[0];
+    let nuevaCoop = coopRes.rows[0];
+    const soporteKeys = Object.keys(soporte.fields);
+    if (soporteKeys.length) {
+      const sets = soporteKeys.map((key, index) => `${key} = $${index + 1}`).join(', ');
+      const soporteRes = await client.query(
+        `UPDATE cooperativas SET ${sets} WHERE id = $${soporteKeys.length + 1} RETURNING *`,
+        [...soporteKeys.map(key => soporte.fields[key]), nuevaCoop.id]
+      );
+      nuevaCoop = soporteRes.rows[0];
+    }
     const passHash = await hashPassword(gerente.password);
 
     const userRes = await client.query(
@@ -469,6 +509,11 @@ exports.actualizarCooperativa = async (req, res) => {
       }
     }
 
+    const soporte = supportChannelsFromBody(body);
+    if (soporte.error) return res.status(400).json({ error: soporte.error });
+    const soporteKeys = Object.keys(soporte.fields).filter(key => SUPPORT_FIELDS.includes(key));
+    const soporteSql = soporteKeys.map((key, index) => `, ${key} = $${13 + index}`).join('');
+
     const nextActivo = req.user?.rol === 'SUPERADMIN' && body.activo !== undefined
       ? Boolean(body.activo)
       : existing.activo;
@@ -485,7 +530,7 @@ exports.actualizarCooperativa = async (req, res) => {
            logo_url = $8,
            cuenta_bancaria = $9,
            banco = $10,
-           activo = $11
+           activo = $11${soporteSql}
        WHERE id = $12
        RETURNING *`,
       [
@@ -500,7 +545,8 @@ exports.actualizarCooperativa = async (req, res) => {
         nextCuenta,
         nextBanco,
         nextActivo,
-        coopId
+        coopId,
+        ...soporteKeys.map(key => soporte.fields[key])
       ]
     );
 

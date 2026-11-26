@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { BusFront, Ticket, Shield, Menu, X, User, LogOut } from 'lucide-react';
+import { BusFront, Shield, Menu, X, User, LogOut } from 'lucide-react';
 import SearchTrips from './pages/Client/SearchTrips.jsx';
 import { recalledCode } from './lib/reservation.js';
 import { api, isDemo } from './lib/api.js';
@@ -367,49 +367,58 @@ export default function App() {
                 <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
                   Buscar viaje
                 </button>
-                <button
-                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
-                  onClick={goCustomer}
-                >
-                  <span className="nav-account-label">
-                    <User size={15} aria-hidden="true" />
-                    {`Hola, ${customerFirstName}`}
-                  </span>
-                </button>
-                <button className="nav-link" onClick={clearCustomer} title="Cerrar sesión de cliente">
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <LogOut size={15} aria-hidden="true" />
-                    Salir
-                  </span>
-                </button>
+                <div className="nav-account-group">
+                  <button
+                    className={`nav-link nav-account-btn ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
+                    onClick={goCustomer}
+                  >
+                    <span className="nav-account-label">
+                      <User size={15} aria-hidden="true" />
+                      {`Hola, ${customerFirstName}`}
+                    </span>
+                  </button>
+                  <button className="nav-link nav-logout-btn" onClick={clearCustomer} title="Cerrar sesión de cliente">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <LogOut size={15} aria-hidden="true" />
+                      Salir
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`nav-link nav-staff-btn ${page === 'login' ? 'active' : ''}`}
+                    onClick={() => goLogin()}
+                    title="Ingreso para personal operativo, oficina y choferes"
+                  >
+                    <Shield size={13} aria-hidden="true" />
+                    Acceso operativo
+                  </button>
+                </div>
               </>
             ) : (
               <>
                 <button className={`nav-link ${page === 'search' ? 'active' : ''}`} onClick={goSearch}>
                   Buscar viaje
                 </button>
-                <button
-                  className={`nav-link ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
-                  onClick={goCustomer}
-                >
-                  Mi cuenta
-                </button>
-                <button
-                  className={`nav-link ${page === 'login' ? 'active' : ''}`}
-                  onClick={() => goLogin()}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <Shield size={15} aria-hidden="true" />
-                    Administración
-                  </span>
-                </button>
+                <div className="nav-account-group">
+                  <button
+                    className={`nav-link nav-account-btn ${['mi-cuenta', 'mis-compras', 'ticket'].includes(page) ? 'active' : ''}`}
+                    onClick={goCustomer}
+                  >
+                    Mi cuenta
+                  </button>
+                  <button
+                    type="button"
+                    className={`nav-link nav-staff-btn ${page === 'login' ? 'active' : ''}`}
+                    onClick={() => goLogin()}
+                    title="Ingreso para personal operativo, oficina y choferes"
+                  >
+                    <Shield size={13} aria-hidden="true" />
+                    Acceso operativo
+                  </button>
+                </div>
               </>
             )}
           </nav>
-
-          <span className="header-note">
-            <Ticket size={17} /> Tu próximo viaje, a un clic
-          </span>
         </div>
       </header>
 
@@ -514,21 +523,9 @@ export default function App() {
               onAdminLogin={() => goLogin()}
             />
           )
-        ) : trip && (!customer || !customerToken) ? (
-          <CustomerAccount
-            customer={customer}
-            token={customerToken}
-            pendingTrip={trip}
-            onSession={handleCustomerSession}
-            onLogout={clearCustomer}
-            onHistory={goHistory}
-            onSearch={goSearch}
-            onAdminLogin={() => goLogin()}
-            hasActiveTrip={false}
-          />
         ) : trip && seats.length ? (
           <Checkout key={selectionKey(trip)} trip={trip} seats={seats} draft={checkoutDraft} onDraftChange={setCheckoutDraft}
-            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
+            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket} onBuyAnother={goSearch}
             onReserved={() => { setReserved(true); setSelectedIds([]); setCheckoutDraft(null); }} />
         ) : trip ? (
           <SeatSelection
@@ -559,10 +556,6 @@ export default function App() {
                 setSelectedIds([]);
                 setCheckoutDraft(null);
                 setReserved(false);
-                if (!customer || !customerToken) {
-                  setPage('mi-cuenta');
-                  window.location.hash = 'mi-cuenta';
-                }
                 window.scrollTo(0, 0);
               }}
             />

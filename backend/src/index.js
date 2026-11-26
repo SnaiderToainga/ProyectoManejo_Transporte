@@ -1,11 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const { buildCorsOptions } = require('./config/corsOptions');
 const path = require('path');
 require('dotenv').config();
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors());
+const corsOptions = buildCorsOptions();
+app.use(cors(corsOptions));
 const bookingController = require('./controllers/bookingController');
 // Webhook Stripe requiere cuerpo crudo (raw JSON) antes del parser JSON global.
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), bookingController.procesarWebhookStripe);
@@ -23,6 +25,10 @@ app.use('/uploads', (req, res) => {
     error: 'El comprobante no está disponible en el almacenamiento temporal del servidor.',
     code: 'RECEIPT_FILE_NOT_FOUND'
   });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'transporte-uta-api', uptime: Math.round(process.uptime()) });
 });
 
 // Rutas

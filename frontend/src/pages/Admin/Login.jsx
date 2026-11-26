@@ -1,15 +1,7 @@
 import { useState } from 'react';
 import { BusFront, Lock, Mail, ShieldAlert, ArrowRight, UserCheck } from 'lucide-react';
+import { API_BASE as API_URL } from '../../lib/env.js';
 
-const isLocalEnv = typeof window !== 'undefined' && (
-  window.location.hostname === 'localhost' || 
-  window.location.hostname === '127.0.0.1' || 
-  window.location.hostname.startsWith('192.168.') || 
-  window.location.hostname.startsWith('10.') || 
-  window.location.hostname.startsWith('172.') || 
-  import.meta.env.DEV
-);
-const API_URL = (import.meta.env.VITE_API_URL || (isLocalEnv ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
 
 export default function Login({ onLoginSuccess, alertaSeguridad = '' }) {
   const [correo, setCorreo] = useState('');

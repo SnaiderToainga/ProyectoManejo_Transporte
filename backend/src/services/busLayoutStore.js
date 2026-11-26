@@ -132,16 +132,20 @@ function loadState() {
     return memoryState;
   }
   try {
+    // En Render el disco es efímero: la carpeta o el archivo pueden no existir tras un redespliegue.
+    fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(DATA_FILE)) {
       return emptyState();
     }
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
+    if (!raw.trim()) return emptyState();
     const parsed = JSON.parse(raw);
     return {
       customTemplates: Array.isArray(parsed?.customTemplates) ? parsed.customTemplates : [],
       busLayouts: parsed?.busLayouts && typeof parsed.busLayouts === 'object' ? parsed.busLayouts : {}
     };
-  } catch {
+  } catch (err) {
+    console.warn('bus_layouts.json vacío o corrupto; se usan las plantillas del sistema:', err.message);
     return emptyState();
   }
 }
@@ -153,7 +157,10 @@ function saveState(state) {
   }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf8');
+    // Escritura atómica: un reinicio a mitad de escritura no deja el JSON truncado.
+    const tmpFile = `${DATA_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
+    fs.renameSync(tmpFile, DATA_FILE);
   } catch (err) {
     console.warn('No se pudo persistir bus_layouts.json:', err.message);
   }

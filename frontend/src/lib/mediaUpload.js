@@ -1,12 +1,4 @@
-const isLocal = typeof window !== 'undefined' && (
-  ['localhost', '127.0.0.1'].includes(window.location.hostname) ||
-  window.location.hostname.startsWith('192.168.') ||
-  window.location.hostname.startsWith('10.') ||
-  window.location.hostname.startsWith('172.') ||
-  import.meta.env.DEV
-);
-
-const API_BASE = (import.meta.env.VITE_API_URL || (isLocal ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
+import { API_BASE } from './env.js';
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|avif|bmp|svg|ico|jfif|heic|heif|tiff?|pjpeg|pjp|apng)$/i;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;

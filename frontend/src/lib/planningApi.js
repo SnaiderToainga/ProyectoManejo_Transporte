@@ -1,5 +1,4 @@
-const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || import.meta.env.DEV;
-const base = (import.meta.env.VITE_API_URL || (isLocal ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
+import { API_BASE as base } from './env.js';
 
 export async function planningRequest(user, path, { method = 'GET', data, signal } = {}) {
   if (!user?.token) throw new Error('Vuelve a iniciar sesión para acceder a la planificación.');

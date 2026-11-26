@@ -63,7 +63,16 @@ function resolverCoord(ciudad) {
   return null;
 }
 
-export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', paradasIntermedias = [] }) {
+export default function RouteMap({
+  origen,
+  destino,
+  tipoServicio = 'DIRECTO',
+  paradasIntermedias = [],
+  cooperativa = '',
+  numeroDisco = '',
+  horaSalida = '',
+  compact = false
+}) {
   const mapContainer = useRef(null);
   const mapInstance = useRef(null);
 
@@ -108,64 +117,84 @@ export default function RouteMap({ origen, destino, tipoServicio = 'DIRECTO', pa
 
     const safeOrigen = escapeHtml(origen || 'Punto de Partida');
     const safeDestino = escapeHtml(destino || 'Punto de Llegada');
+    const safeCoop = escapeHtml(cooperativa || 'Terminal Autorizado ANT');
 
     const markerOrigen = L.marker(coordOrigen, { icon: startIcon }).addTo(map);
-    markerOrigen.bindPopup(`<strong>Origen: ${safeOrigen}</strong><br/>Terminal Autorizado ANT`);
+    markerOrigen.bindPopup(`<strong>Origen: ${safeOrigen}</strong><br/>${safeCoop}`);
 
     const markerDestino = L.marker(coordDestino, { icon: endIcon }).addTo(map);
     markerDestino.bindPopup(`<strong>Destino: ${safeDestino}</strong><br/>Terminal Terrestre Oficial`);
 
     const puntosRuta = [coordOrigen];
-    paradasReales.forEach((p) => {
+    paradasReales.forEach((p, idx) => {
       const m = L.marker(p.coord, { icon: stopIcon }).addTo(map);
-      m.bindPopup(`<strong>Parada Intermedia:</strong><br/>${escapeHtml(p.nombre)}<br/><em>Modalidad con Paradas</em>`);
+      m.bindPopup(`<strong>Parada ${idx + 1}:</strong><br/>${escapeHtml(p.nombre)}<br/><em>Modalidad con Paradas</em>`);
       puntosRuta.push(p.coord);
     });
     puntosRuta.push(coordDestino);
 
+    const isDashed = tipoServicio === 'PARADAS' || paradasReales.length > 0;
     const polyline = L.polyline(puntosRuta, {
       color: '#1e3a8a',
       weight: 5,
       opacity: 0.85,
-      dashArray: tipoServicio === 'PARADAS' ? '6, 8' : undefined
+      dashArray: isDashed ? '6, 8' : undefined
     }).addTo(map);
 
-    try {
-      map.fitBounds(polyline.getBounds(), { padding: [40, 40], animate: false });
-    } catch {}
+    const frame = requestAnimationFrame(() => {
+      try {
+        map.invalidateSize();
+        map.fitBounds(polyline.getBounds(), { padding: [40, 40], animate: false });
+      } catch {}
+    });
 
     return () => {
+      cancelAnimationFrame(frame);
       if (mapInstance.current) {
         mapInstance.current.remove();
         mapInstance.current = null;
       }
     };
-  }, [origen, destino, tipoServicio, JSON.stringify(paradasIntermedias)]);
+  }, [origen, destino, tipoServicio, cooperativa, JSON.stringify(paradasIntermedias)]);
 
-  const isParadas = tipoServicio === 'PARADAS' || String(tipoServicio || '').includes('PARADAS');
+  const isParadas = tipoServicio === 'PARADAS' || String(tipoServicio || '').includes('PARADAS') || paradasReales.length > 0;
+  const metaBits = [
+    cooperativa,
+    numeroDisco ? `Unidad #${numeroDisco}` : '',
+    horaSalida ? `Salida ${horaSalida}` : ''
+  ].filter(Boolean);
 
   return (
-    <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', backgroundColor: '#ffffff' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Navigation size={18} color="#1e3a8a" />
-          <strong style={{ fontSize: '14px', color: '#1e293b' }}>
-            Mapa Oficial de Frecuencia ANT: {origen || 'Origen'} &rarr; {destino || 'Destino'}
-          </strong>
+    <div className="route-map-panel" style={{ marginTop: compact ? '0.75rem' : '1.5rem', marginBottom: compact ? '0.25rem' : '1.5rem', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', backgroundColor: '#ffffff' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Navigation size={17} color="#1e3a8a" />
+            <strong style={{ fontSize: '14px', color: '#1e293b' }}>
+              Ruta: {origen || 'Origen'} &rarr; {destino || 'Destino'}
+            </strong>
+          </div>
+          {metaBits.length > 0 && (
+            <span style={{ fontSize: '12px', color: '#475569', paddingLeft: '25px' }}>
+              {metaBits.join(' · ')}
+            </span>
+          )}
         </div>
         <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '9999px', fontWeight: 'bold', backgroundColor: isParadas ? '#e0e7ff' : '#dcfce7', color: isParadas ? '#3730a3' : '#166534' }}>
-          {isParadas ? 'Frecuencia con Paradas Intermedias' : 'Ruta Directa (Sin Paradas)'}
+          {isParadas ? 'Con Paradas Intermedias' : 'Ruta Directa'}
         </span>
       </div>
 
-      <div ref={mapContainer} style={{ width: '100%', height: '260px' }} />
+      <div ref={mapContainer} style={{ width: '100%', height: compact ? '230px' : '260px' }} />
 
-      <div style={{ padding: '10px 16px', backgroundColor: '#ffffff', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f1f5f9' }}>
+      <div style={{ padding: '9px 14px', backgroundColor: '#ffffff', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
         <Info size={15} color="#3b82f6" />
         <span>
-          {isParadas
-            ? 'Frecuencia corriente con habilitación para paradas intermedias de embarque y desembarque.'
-            : 'Servicio expreso directo de terminal a terminal según Resolución Oficial de la ANT.'}
+          {paradasReales.length > 0
+            ? `Trazado completo: ${[origen, ...paradasReales.map(p => p.nombre), destino].filter(Boolean).join(' → ')}.`
+            : isParadas
+              ? 'Frecuencia corriente con habilitación para paradas intermedias de embarque y desembarque.'
+              : 'Servicio expreso directo de terminal a terminal según Resolución Oficial de la ANT.'}
         </span>
       </div>
     </div>

@@ -95,6 +95,29 @@ exports.validarUrlImagenSegura = (value) => {
   }
 };
 
+// 9.1 URL de red social (CR-14): vacío/null o solo http(s) absoluto, sin credenciales ni esquemas peligrosos
+exports.validarUrlSocialSegura = (value) => {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (trimmed.length > 500 || /[\s<>"']/.test(trimmed)) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return ['https:', 'http:'].includes(parsed.protocol) && Boolean(parsed.hostname) && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+};
+
+// 9.2 WhatsApp de soporte (CR-14): limpia espacios, guiones y paréntesis; acepta 09XXXXXXXX o +5939XXXXXXXX
+exports.normalizarWhatsapp = (value) => {
+  if (value === undefined || value === null) return '';
+  const cleaned = String(value).trim().replace(/[\s().-]/g, '');
+  if (!cleaned) return '';
+  return /^\+?\d{9,15}$/.test(cleaned) ? cleaned : null;
+};
+
 // 10. Color hexadecimal (#RRGGBB)
 exports.validarColorHex = (color) => {
   if (!color || typeof color !== 'string') return false;

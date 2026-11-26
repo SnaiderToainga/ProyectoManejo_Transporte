@@ -1,6 +1,17 @@
 // frontend/src/pages/Admin/PersonalizacionBranding.jsx
 import React, { useState } from 'react';
 import ImageUploadControl from '../../components/ImageUploadControl.jsx';
+import { resolveMediaUrl } from '../../lib/env.js';
+import { supportChannelErrors } from '../../lib/supportChannels.js';
+import SupportChannels from '../../components/SupportChannels.jsx';
+
+const SOCIAL_FIELDS = [
+  { key: 'facebook_url', label: 'Facebook (URL)', placeholder: 'https://facebook.com/tu-cooperativa', type: 'url' },
+  { key: 'instagram_url', label: 'Instagram (URL)', placeholder: 'https://instagram.com/tu-cooperativa', type: 'url' },
+  { key: 'whatsapp_soporte', label: 'WhatsApp de soporte', placeholder: '0991234567', type: 'tel' },
+  { key: 'correo_soporte', label: 'Correo de soporte', placeholder: 'soporte@cooperativa.com', type: 'email' }
+];
+const socialFrom = (cooperative) => Object.fromEntries(SOCIAL_FIELDS.map(({ key }) => [key, cooperative?.[key] || '']));
 
 export default function PersonalizacionBranding({ cooperativas = [], onActualizarCoop, cooperativa = null, onClose = null, onGuardar = null, user = null }) {
   const lista = cooperativas && cooperativas.length > 0 ? cooperativas : (cooperativa ? [cooperativa] : []);
@@ -11,6 +22,8 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
   const [logoUrl, setLogoUrl] = useState(coop?.logo_url || '');
   const [telefono, setTelefono] = useState(coop?.telefono || '');
   const [direccion, setDireccion] = useState(coop?.direccion || '');
+  const [social, setSocial] = useState(() => socialFrom(coop));
+  const socialErrors = supportChannelErrors(social);
   const [guardadoMsg, setGuardadoMsg] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -33,6 +46,7 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
       setLogoUrl(seleccionada.logo_url || '');
       setTelefono(seleccionada.telefono || '');
       setDireccion(seleccionada.direccion || '');
+      setSocial(socialFrom(seleccionada));
       setGuardadoMsg(false);
     }
   };
@@ -40,13 +54,18 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
   const handleGuardarCambios = async (e) => {
     e.preventDefault();
     if (saving) return;
+    if (Object.keys(socialErrors).length) {
+      setSaveError('Revisa las redes sociales y canales de soporte antes de guardar.');
+      return;
+    }
     if (coop) {
       const datosActualizados = {
         ...coop,
         color_distintivo: color,
         logo_url: logoUrl,
         telefono,
-        direccion
+        direccion,
+        ...Object.fromEntries(Object.entries(social).map(([key, value]) => [key, value.trim()]))
       };
       setSaving(true); setSaveError(''); setGuardadoMsg(false);
       try {
@@ -192,7 +211,7 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                 {logoUrl ? (
                   <img
                     key={`logo-form-${logoUrl}`}
-                    src={logoUrl}
+                    src={resolveMediaUrl(logoUrl)}
                     alt={`Vista previa ${coop?.nombre}`}
                     style={{ width: '84px', height: '84px', borderRadius: '14px', objectFit: 'contain', backgroundColor: '#FFFFFF', border: `3px solid ${color}`, padding: '4px', boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}
                     onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
@@ -235,6 +254,27 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
               />
             </div>
 
+            {/* Redes sociales y canales de soporte (CR-14) */}
+            <fieldset style={{ ...styles.fieldGroup, border: '1px solid #E2E8F0', borderRadius: '12px', padding: '12px' }}>
+              <legend style={styles.fieldLabel}>Redes sociales y soporte</legend>
+              {SOCIAL_FIELDS.map(({ key, label, placeholder, type }) => (
+                <div key={key} style={{ display: 'grid', gap: '4px', marginBottom: '8px' }}>
+                  <label htmlFor={`branding-${key}`} style={{ fontSize: '12px', fontWeight: '700', color: '#334155' }}>{label}</label>
+                  <input
+                    id={`branding-${key}`}
+                    type={type}
+                    value={social[key]}
+                    maxLength={key === 'correo_soporte' ? 120 : 500}
+                    onChange={(e) => setSocial((previous) => ({ ...previous, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                    aria-invalid={Boolean(socialErrors[key])}
+                    style={styles.textInput}
+                  />
+                  {socialErrors[key] && <small role="alert" style={{ color: '#B91C1C' }}>{socialErrors[key]}</small>}
+                </div>
+              ))}
+            </fieldset>
+
             {guardadoMsg && (
               <div style={styles.alertSuccess}>
                 ✓ Configuración institucional guardada exitosamente.
@@ -262,7 +302,7 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
                 {logoUrl && (
                   <img
                     key={`logo-ticket-${logoUrl}`}
-                    src={logoUrl}
+                    src={resolveMediaUrl(logoUrl)}
                     alt="Logo"
                     style={styles.ticketLogo}
                     onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
@@ -337,6 +377,9 @@ export default function PersonalizacionBranding({ cooperativas = [], onActualiza
             <div style={styles.ticketFooter}>
               <span>Atención: {telefono || '032820000'}</span>
               <span>RUC: {coop.ruc}</span>
+            </div>
+            <div style={{ padding: '8px 14px 12px' }}>
+              <SupportChannels cooperative={social} title="Canales de soporte" compact />
             </div>
           </div>
         </div>
