@@ -3,6 +3,9 @@ import BusDetails from '../../components/BusDetails.jsx';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, BusFront, CalendarDays, ChevronDown, ChevronUp, Search, SlidersHorizontal, Users } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
+import { resolveMediaUrl } from '../../lib/env.js';
+import SupportChannels from '../../components/SupportChannels.jsx';
+import { supportChannels } from '../../lib/supportChannels.js';
 import { calculateSegmentPrice, matchesTrip, money, resolveTripSegment, shortTime, today, travelDate } from '../../lib/format.js';
 import { cantonOptions, countAvailableSeats, MAX_PASSENGERS, passengerCount, searchOptions, tripAvailability } from '../../lib/tripSearch.js';
 
@@ -192,7 +195,7 @@ export default function SearchTrips({ onChoose }) {
                     {trip.logo_url ? (
                       <img
                         key={`trip-logo-${trip.programacion_id}-${trip.logo_url}`}
-                        src={trip.logo_url}
+                        src={resolveMediaUrl(trip.logo_url)}
                         alt={`Logo ${trip.cooperativa_nombre}`}
                         style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'contain', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '3px', flexShrink: 0 }}
                         onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
@@ -308,7 +311,16 @@ export default function SearchTrips({ onChoose }) {
                   </div>
                 </article>
               );
-            })}</div></>}
+            })}</div>
+            {/* Directorio de atención al cliente de las cooperativas mostradas (CR-14) */}
+            {(() => {
+              const seen = new Set();
+              const coops = trips.filter(trip => supportChannels(trip).length && !seen.has(trip.cooperativa_nombre) && seen.add(trip.cooperativa_nombre));
+              return coops.length ? <aside className="support-directory" aria-label="Atención al cliente de las cooperativas">
+                <h3>¿Necesitas ayuda con tu viaje?</h3>
+                {coops.map(trip => <SupportChannels key={trip.cooperativa_nombre} cooperative={trip} title={trip.cooperativa_nombre} compact />)}
+              </aside> : null;
+            })()}</>}
     </section>
     <div className="how-it-works">{[['01', 'Encuentra tu viaje', 'Compara rutas y horarios.'], ['02', 'Elige tu lugar', 'Un asiento a tu medida.'], ['03', 'Lleva tu boleto', 'Consulta y descarga tu PDF.']].map(([number, title, copy]) => <div key={number}><span>{number}</span><div><h3>{title}</h3><p>{copy}</p></div></div>)}</div>
     {busDetalle && <BusDetails bus={busDetalle} onClose={() => setBusDetalle(null)} />}

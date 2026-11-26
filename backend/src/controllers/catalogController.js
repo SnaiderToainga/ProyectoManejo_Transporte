@@ -24,7 +24,11 @@ exports.getFrecuencias = async (req, res) => {
              (f.es_destacada = true
               AND (f.patrocinio_inicio IS NULL OR f.patrocinio_inicio <= CURRENT_TIMESTAMP)
               AND (f.patrocinio_fin IS NULL OR f.patrocinio_fin >= CURRENT_TIMESTAMP)) AS patrocinio_activo,
-             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
+             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url,
+             NULLIF(BTRIM(to_jsonb(c)->>'facebook_url'), '') AS facebook_url,
+             NULLIF(BTRIM(to_jsonb(c)->>'instagram_url'), '') AS instagram_url,
+             NULLIF(BTRIM(to_jsonb(c)->>'whatsapp_soporte'), '') AS whatsapp_soporte,
+             NULLIF(BTRIM(to_jsonb(c)->>'correo_soporte'), '') AS correo_soporte
       FROM frecuencias f
       JOIN cooperativas c ON f.cooperativa_id = c.id
       WHERE f.activo = true AND c.activo = true
@@ -67,7 +71,11 @@ exports.getViajesProgramados = async (req, res) => {
              disponibilidad.asientos_disponibles,
              disponibilidad.asientos_disponibles_normal,
              disponibilidad.asientos_disponibles_vip,
-             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url
+             c.nombre as cooperativa_nombre, c.color_distintivo, c.logo_url,
+             NULLIF(BTRIM(to_jsonb(c)->>'facebook_url'), '') AS facebook_url,
+             NULLIF(BTRIM(to_jsonb(c)->>'instagram_url'), '') AS instagram_url,
+             NULLIF(BTRIM(to_jsonb(c)->>'whatsapp_soporte'), '') AS whatsapp_soporte,
+             NULLIF(BTRIM(to_jsonb(c)->>'correo_soporte'), '') AS correo_soporte
       FROM programacion_viajes pv
       JOIN frecuencias f ON pv.frecuencia_id = f.id
       JOIN buses b ON pv.bus_id = b.id

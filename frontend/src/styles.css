@@ -728,3 +728,12 @@ hr { border: 0; border-top: 1px solid #e0e6db; margin: 22px 0; }
   border: 1px solid #e2e8f0;
   background: #f8fafc;
 }
+
+/* CR-14: redes sociales y canales de soporte */
+.support-channels { margin-top: 12px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 13px; }
+.support-channels strong { display: block; margin-bottom: 6px; color: #0f172a; }
+.support-channels ul { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 0; list-style: none; }
+.support-channels a { color: #1d4ed8; font-weight: 600; overflow-wrap: anywhere; }
+.support-channels.compact { margin-top: 6px; padding: 8px 10px; }
+.support-directory { display: grid; gap: 10px; margin-top: 20px; }
+.support-directory h3 { margin: 0; font-size: 16px; }

@@ -1,6 +1,6 @@
 // backend/src/controllers/officeController.js
 const { quotePassengers } = require('../services/passengerFares');
-const { notifyReservation } = require('../services/receiptData');
+const { notifyReservation, notifyReservationStatus } = require('../services/receiptData');
 const { lockTrip, occupiedReservation, occupiedSeats, seatIds, tripSeats } = require('../services/seatInventory');
 const db = require('../config/db');
 const pool = db.pool || db;
@@ -177,6 +177,10 @@ exports.validarComprobante = async (req, res) => {
 
     if (aprobar) {
       notifyReservation(pool, reserva.codigo_reserva).catch(error => console.error('Error al notificar boleto:', error.message));
+    } else {
+      // CR-14: aviso de rechazo con asientos liberados; no reutiliza la plantilla del boleto.
+      notifyReservationStatus(pool, reserva.codigo_reserva, 'RECHAZADO')
+        .catch(error => console.error('Error al notificar rechazo:', error.message));
     }
 
     res.json({

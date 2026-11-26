@@ -26,4 +26,21 @@ async function notifyReservation(pool, code) {
     asientos: reservation.boletos.map(b => b.numero_asiento), total: reservation.total, reservaId: code
   });
 }
-module.exports = { loadReservation, notifyReservation };
+
+// CR-14: avisos de estado que NO emiten boleto (comprobante en revisión o reserva rechazada).
+// Nunca reutiliza notifyReservation/enviarBoletoEmail, que solo aplican a reservas PAGADAS.
+const ESTADOS_PERMITIDOS = { COMPROBANTE_EN_REVISION: 'PENDIENTE', RECHAZADO: 'RECHAZADO' };
+
+async function notifyReservationStatus(pool, code, kind) {
+  if (!ESTADOS_PERMITIDOS[kind]) throw new Error(`Tipo de notificación no soportado: ${kind}`);
+  const reservation = await loadReservation(pool, code);
+  if (!reservation?.email || reservation.estado !== ESTADOS_PERMITIDOS[kind]) return null;
+  return require('./emailService').enviarNotificacionEstadoReserva({
+    emailDestinatario: reservation.email, cooperativa: reservation.cooperativa_nombre,
+    origen: reservation.origen, destino: reservation.destino,
+    fecha: reservation.fecha_viaje instanceof Date ? reservation.fecha_viaje.toISOString().slice(0,10) : String(reservation.fecha_viaje).slice(0,10),
+    hora: reservation.hora_salida_programada, asientos: reservation.boletos.map(b => b.numero_asiento),
+    total: reservation.total, reservaId: code
+  }, kind);
+}
+module.exports = { loadReservation, notifyReservation, notifyReservationStatus };

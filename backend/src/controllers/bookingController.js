@@ -8,7 +8,7 @@ const { lockTrip, occupiedSeats, seatIds, tripSeats } = require('../services/sea
 const db = require('../config/db');
 const pool = db.pool || db;
 const { quotePassengers } = require('../services/passengerFares');
-const { loadReservation, notifyReservation } = require('../services/receiptData');
+const { loadReservation, notifyReservation, notifyReservationStatus } = require('../services/receiptData');
 const { officeScope } = require('../services/officeAccess');
 
 exports.solicitarAccesoHistorial = async (req, res) => {
@@ -352,6 +352,10 @@ exports.subirComprobante = async (req, res) => {
     );
 
     await client.query('COMMIT');
+
+    // CR-14: aviso asíncrono de "comprobante en revisión" (no bloquea la respuesta ni emite boleto).
+    notifyReservationStatus(pool, codigo, 'COMPROBANTE_EN_REVISION')
+      .catch(err => console.error('Error al notificar comprobante:', err.message));
 
     res.json({
       mensaje: 'Comprobante recibido exitosamente. Queda en revisión por el oficinista.',

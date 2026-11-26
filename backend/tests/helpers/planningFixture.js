@@ -14,6 +14,8 @@ async function createFixture() {
   await database.exec(migration);
   await database.exec(migration);
   await database.exec(readFileSync(path.join(__dirname, '../../database/05_boletos_termicos_tarifas.sql'), 'utf8'));
+  // CR-14: redes sociales y canales de soporte de la cooperativa.
+  await database.exec(readFileSync(path.join(__dirname, '../../database/09_cr14_branding_soporte.sql'), 'utf8'));
   let queue = Promise.resolve();
   async function connect() {
     const previous = queue;
