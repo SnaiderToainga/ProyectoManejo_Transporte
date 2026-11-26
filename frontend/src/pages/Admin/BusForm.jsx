@@ -9,6 +9,7 @@ import BusTemplateDesigner, {
   designToApiPayload
 } from '../../components/BusTemplateDesigner.jsx';
 import { safeImageUrl } from '../../lib/cooperativeForm.js';
+import { resolveMediaUrl } from '../../lib/env.js';
 import { planningRequest } from '../../lib/planningApi.js';
 
 export default function BusForm({ bus, cooperativas, cooperativeId, isManager, user, onSave, onClose }) {
@@ -196,7 +197,7 @@ export default function BusForm({ bus, cooperativas, cooperativeId, isManager, u
                     >
                       {safeImageUrl(url) ? (
                         <img
-                          src={url}
+                          src={resolveMediaUrl(url)}
                           alt={`Vista previa foto ${idx + 1}`}
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         />

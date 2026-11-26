@@ -74,7 +74,7 @@ const BANK_PROVIDERS = [
   },
 ];
 
-export function PaymentPanel({ reservation, onUpdate, onDone }) {
+export function PaymentPanel({ reservation, onUpdate, onDone, onBuyAnother }) {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -449,18 +449,25 @@ export function PaymentPanel({ reservation, onUpdate, onDone }) {
           <CheckCircle2 size={25} />
           <h3>{statuses[status][0]}</h3>
           <p>{statuses[status][1]}</p>
-          {onDone && (
-            <button className="button secondary" onClick={() => onDone(reservation.codigo_reserva)}>
-              Consultar mi boleto
-            </button>
-          )}
+          <div className="notice-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' }}>
+            {onDone && (
+              <button className="button secondary" onClick={() => onDone(reservation.codigo_reserva)}>
+                Consultar mi boleto
+              </button>
+            )}
+            {onBuyAnother && (
+              <button type="button" className="button primary" onClick={onBuyAnother}>
+                Comprar otro boleto
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraftChange, customer, customerToken, onAccount, onCustomerSession, onCustomerLogout, onHistory, onReserved }) {
+export default function Checkout({ trip, seats, onBack, onConsult, onBuyAnother, draft, onDraftChange, customer, customerToken, onAccount, onCustomerSession, onCustomerLogout, onHistory, onReserved }) {
   const [passengers, setPassengers] = useState(() =>
     seats.map(seat => draft?.passengers?.find(passenger => passenger.asiento_id === seat.asiento_id) || ({
       asiento_id: seat.asiento_id,
@@ -639,6 +646,7 @@ export default function Checkout({ trip, seats, onBack, onConsult, draft, onDraf
               reservation={reservation}
               onUpdate={setReservation}
               onDone={onConsult}
+              onBuyAnother={onBuyAnother}
             />
           ) : !customer || !customerToken ? (
             <div className="client-checkout-gate">

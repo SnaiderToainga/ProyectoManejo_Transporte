@@ -1,5 +1,4 @@
-const isLocal = typeof window === 'undefined' || ['localhost', '127.0.0.1'].includes(window.location.hostname) || import.meta.env?.DEV;
-const base = (import.meta.env?.VITE_API_URL || (isLocal ? '/api' : 'https://transporte-uta-api.onrender.com/api')).replace(/\/$/, '');
+import { API_BASE as base } from './env.js';
 
 export async function officeRequest(user, path, { method = 'GET', data, signal } = {}) {
   if (!user?.token) {

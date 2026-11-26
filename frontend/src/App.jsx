@@ -528,7 +528,7 @@ export default function App() {
           />
         ) : trip && seats.length ? (
           <Checkout key={selectionKey(trip)} trip={trip} seats={seats} draft={checkoutDraft} onDraftChange={setCheckoutDraft}
-            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket}
+            customer={customer} customerToken={customerToken || historyToken} onAccount={goCustomer} onCustomerSession={handleCustomerSession} onCustomerLogout={clearCustomer} onHistory={goHistory} onBack={() => setSeats([])} onConsult={goTicket} onBuyAnother={goSearch}
             onReserved={() => { setReserved(true); setSelectedIds([]); setCheckoutDraft(null); }} />
         ) : trip ? (
           <SeatSelection

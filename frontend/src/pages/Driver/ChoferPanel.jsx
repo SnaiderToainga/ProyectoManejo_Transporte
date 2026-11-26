@@ -1,20 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import jsQR from 'jsqr';
 import { shortTime, today } from '../../lib/format.js';
+import { API_BASE } from '../../lib/env.js';
 import { 
   Bus, QrCode, CheckCircle2, AlertTriangle, XCircle, Play, CheckCheck, 
   RefreshCw, Volume2, VolumeX, Camera, Search, Upload, LogOut
 } from 'lucide-react';
 
-const getApiBase = () => {
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.') || import.meta.env.DEV) {
-      return '/api';
-    }
-  }
-  return (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-};
+const getApiBase = () => API_BASE;
 
 // Generador de sonidos con Web Audio API para feedback auditivo en puerta
 const playBeep = (type = 'success') => {

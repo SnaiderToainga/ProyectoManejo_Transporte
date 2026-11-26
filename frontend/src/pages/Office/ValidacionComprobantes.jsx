@@ -1,28 +1,9 @@
 import { officeRequest } from '../../lib/officeApi.js';
 import { useEffect, useState } from 'react';
 import { money, shortTime, travelDate } from '../../lib/format.js';
+import { resolveMediaUrl } from '../../lib/env.js';
 
-const isLocalHost = typeof window !== 'undefined' && (
-  window.location.hostname === 'localhost' ||
-  window.location.hostname === '127.0.0.1' ||
-  window.location.hostname.startsWith('192.168.') ||
-  window.location.hostname.startsWith('10.') ||
-  window.location.hostname.startsWith('172.') ||
-  import.meta.env?.DEV
-);
-
-const BACKEND_URL = (
-  import.meta.env.VITE_API_URL ||
-  (isLocalHost ? '' : 'https://transporte-uta-api.onrender.com/api')
-).replace(/\/api\/?$/, '');
-
-const getComprobanteUrl = (url) => {
-  if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
-  const cleanBase = BACKEND_URL.replace(/\/$/, '');
-  const cleanPath = url.startsWith('/') ? url : `/${url}`;
-  return `${cleanBase}${cleanPath}`;
-};
+const getComprobanteUrl = (url) => resolveMediaUrl(url);
 
 const isPdfUrl = (url) => Boolean(url) && /\.pdf(\?|$)/i.test(String(url));
 

@@ -1,5 +1,7 @@
 export const isDemo = new URLSearchParams(window.location.search).get('demo') === '1';
-const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+import { API_BASE } from './env.js';
+
+const baseUrl = API_BASE;
 
 export class ApiError extends Error {
   constructor(message, status = 0, details = {}) { super(message); this.status = status; this.details = details; }

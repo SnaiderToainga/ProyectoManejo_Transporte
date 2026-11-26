@@ -12,6 +12,7 @@ import {
   Check
 } from 'lucide-react';
 import { cooperativeDraft, cooperativeErrors, cooperativePayload, safeImageUrl } from '../../lib/cooperativeForm.js';
+import { resolveMediaUrl } from '../../lib/env.js';
 import { diagnosticarRucEcuador, validarCedulaEcuador } from '../../lib/validation.js';
 import Modal from '../../components/Modal.jsx';
 import ImageUploadControl from '../../components/ImageUploadControl.jsx';
@@ -220,7 +221,7 @@ export default function ModalNuevaCooperativa({ isOpen, onClose, onGuardar, coop
           {safeImageUrl(form.logo_url) && !logoBroken ? (
             <img
               className="cr01-logo"
-              src={form.logo_url}
+              src={resolveMediaUrl(form.logo_url)}
               alt={`Logo de ${form.nombre || 'la cooperativa'}`}
               onError={() => setLogoBroken(true)}
               style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 10, border: `2px solid ${brandColor}`, background: '#fff', margin: 0 }}
