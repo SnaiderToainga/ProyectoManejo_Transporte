@@ -3,7 +3,7 @@ message: "Si utiliza este software o repositorio para fines académicos, por fav
 title: "Sistema Web para Gestión y Venta de Pasajes Interprovinciales en Ecuador"
 abstract: "Aplicación web para la gestión y venta de pasajes interprovinciales en Ecuador, desarrollada con buenas prácticas de Gestión de la Configuración del Software (SCM): control de versiones con Git, Gitflow en la fase inicial y control de cambios bajo el flujo ITIL 4 en producción, con Comité de Control de Cambios (CAB), Pull Requests con doble aprobación, versionado semántico y trazabilidad de cada petición de cambio hasta su versión publicada."
 type: software
-version: 1.9.3
+version: 1.10.0
 date-released: 2026-11-25
 license: GPL-3.0
 institution:

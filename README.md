@@ -2,7 +2,7 @@
 [![Licencia: GPL v3](https://img.shields.io/badge/Licencia-GPLv3-blue.svg)](LICENSE)
 [![Gobernanza: ITIL 4](https://img.shields.io/badge/Gobernanza-ITIL%204%20%2F%20CAB-blue.svg)](CONTRIBUTING.md)
 [![Institución: UTA FISEI](https://img.shields.io/badge/UTA-FISEI-red.svg)](https://fisei.uta.edu.ec)
-[![Version: 1.9.2](https://img.shields.io/badge/Versi%C3%B3n-1.9.2-green.svg)](#)
+[![Version: 1.10.0](https://img.shields.io/badge/Versi%C3%B3n-1.10.0-green.svg)](#)
 
 Proyecto de desarrollo colaborativo de software correspondiente a la cátedra de **Manejo y Configuración de Software**, Carrera de Software, Facultad de Ingeniería en Sistemas, Electrónica e Industrial (**FISEI**), **Universidad Técnica de Ambato**.
 
@@ -22,7 +22,7 @@ Solución web integral para digitalizar la operativa entre cooperativas de trans
 
 | Integrante | Rol Oficial en el Proyecto | Perfil y Responsabilidad Técnica |
 | :--- | :--- | :--- |
-| **Ing. Snaider Toainga** | **Líder SCM & Gestor CAB** | Aprobador oficial de `main`, verificación de PIR, seguridad RBAC (`CR-10`, `CR-03`) y release tag final (`v1.9.2`). |
+| **Ing. Snaider Toainga** | **Líder SCM & Gestor CAB** | Aprobador oficial de `main`, verificación de PIR, seguridad RBAC (`CR-10`, `CR-03`), mapa por ruta y empaquetado Docker (`CR-15`), release tag (`v1.10.0`). |
 | **Ing. Joel Poaquiza** | **Presidente CAB & Auditor QA** | Dictamen de cambios, validación de calidad, módulo chofer QR (`CR-04`), frecuencias (`CR-05`) y hotfix de estabilización (`CR-13`). |
 | **Ing. Cristian Sivinta** | **Backend Core & Matriz SCM** | Modelado relacional, matriz pizarrón de hojas de ruta (`CR-08`) y boleto térmico con tarifas diferenciadas (`CR-07`). |
 | **Ing. Cesar Carrasco** | **Backend Transaccional & Pagos** | Pasarela Stripe Sandbox (`CR-01`), contingencia de comprobantes Render (`CR-11`) y trámite de solicitud rechazada (`CR-12`). |
@@ -64,7 +64,8 @@ transporte-interprovincial-uta/
 │   ├── src/pages/Office/        # Módulo de taquilla, validación y hojas de ruta
 │   ├── src/pages/Driver/        # Cabina del chofer con escáner QR en puerta
 │   └── src/pages/Admin/         # Wizard de cooperativas, flota y administración
-├── docs/                        # Evidencias, especificaciones y memorias de cada CR (01 al 13)
+├── docs/                        # Evidencias, especificaciones y memorias de cada CR (01 al 15)
+├── docker-compose.yml           # Orquestación Docker (backend Express + frontend Nginx SPA)
 ├── CITATION.cff                 # Metadatos para citación formal del repositorio
 ├── CONTRIBUTING.md               # Guía oficial de contribución y gobernanza ITIL 4
 ├── CODE_OF_CONDUCT.md            # Código de conducta y ética del equipo
@@ -83,6 +84,13 @@ transporte-interprovincial-uta/
    ```
 2. **Configuración de Variables de Entorno:**
    * Crear `backend/.env` configurando `DATABASE_URL` (Supabase), credenciales de correo y llaves de Stripe Sandbox.
-3. **Instalación y Ejecución:**
-   * **Backend:** `cd backend && npm install && npm run dev`
+3. **Instalación y Ejecución Local:**
+   * **Backend:** `cd backend && npm install && npm start`
    * **Frontend:** `cd frontend && npm install && npm run dev`
+4. **Ejecución en Contenedores (Docker Compose — CR-15):**
+   * Copiar `backend/.env.example` a `backend/.env`, completar `DATABASE_URL` y secretos HMAC, y ajustar `FRONTEND_URL=http://localhost:8088`.
+   * Ejecutar:
+     ```bash
+     docker compose up --build -d
+     ```
+   * Portal web disponible en `http://localhost:8088` y API en `http://localhost:3001/api/health`. Los archivos cargados (`/app/uploads`) y plantillas JSON (`/app/data`) persisten en volúmenes Docker sin alterar el despliegue en producción (Vercel + Render).
