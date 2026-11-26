@@ -27,6 +27,10 @@ app.use('/uploads', (req, res) => {
   });
 });
 
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'transporte-uta-api', uptime: Math.round(process.uptime()) });
+});
+
 // Rutas
 const catalogRoutes = require('./routes/catalogRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
