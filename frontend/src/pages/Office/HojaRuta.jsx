@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Bus,
@@ -14,12 +14,16 @@ import {
   CheckCircle2,
   Clock,
   Layers,
-  Info
+  Info,
+  MapPin,
+  X
 } from 'lucide-react';
 import { planningRequest } from '../../lib/planningApi.js';
 import { shortTime, today } from '../../lib/format.js';
 import PlanningSetup from './PlanningSetup.jsx';
 import './planning.css';
+
+const RouteMap = lazy(() => import('../../components/RouteMap.jsx'));
 
 const cellKey = (frequency, date) => `${frequency}:${date}`;
 
@@ -83,6 +87,7 @@ export default function HojaRuta({ usuario }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [mapFrec, setMapFrec] = useState(null);
   const [reload, setReload] = useState(0);
   const [catalogReload, setCatalogReload] = useState(0);
   const prevCoopRef = useRef(cooperativeId);
@@ -692,8 +697,16 @@ export default function HojaRuta({ usuario }) {
                         <tr key={f.id}>
                           <th scope="row" className="planning-sticky-col">
                             <div className="planning-frec-title">{f.origen} → {f.destino}</div>
-                            <div className="planning-frec-meta">
+                            <div className="planning-frec-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <Clock size={12} /> <strong>{shortTime(f.hora_salida)}</strong> · {f.resolucion_ant}
+                              <button
+                                type="button"
+                                className="planning-frec-map-btn"
+                                onClick={() => setMapFrec(f)}
+                                title={`Ver mapa de ${f.origen} a ${f.destino}`}
+                              >
+                                <MapPin size={11} aria-hidden="true" /> Mapa
+                              </button>
                             </div>
                           </th>
 
@@ -933,6 +946,35 @@ export default function HojaRuta({ usuario }) {
             </>
           )}
         </>
+      )}
+
+      {mapFrec && (
+        <div className="planning-map-modal-backdrop" role="dialog" aria-modal="true" aria-label={`Mapa de ruta ${mapFrec.origen} a ${mapFrec.destino}`} onClick={() => setMapFrec(null)}>
+          <div className="planning-map-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="planning-map-modal-head">
+              <div>
+                <strong>{mapFrec.origen} → {mapFrec.destino}</strong>
+                <div className="muted" style={{ fontSize: '0.82rem' }}>
+                  Salida {shortTime(mapFrec.hora_salida)} · ANT {mapFrec.resolucion_ant || 'N/D'}
+                </div>
+              </div>
+              <button type="button" className="button secondary" onClick={() => setMapFrec(null)} aria-label="Cerrar mapa">
+                <X size={16} /> Cerrar
+              </button>
+            </div>
+            <Suspense fallback={<p className="muted">Cargando mapa de ruta...</p>}>
+              <RouteMap
+                origen={mapFrec.origen}
+                destino={mapFrec.destino}
+                tipoServicio={mapFrec.tipo_servicio}
+                cooperativa={cooperatives.find(c => String(c.id) === String(cooperativeId))?.nombre || usuario?.cooperativa_nombre || ''}
+                horaSalida={shortTime(mapFrec.hora_salida)}
+                paradasIntermedias={mapFrec.paradas_intermedias}
+                compact
+              />
+            </Suspense>
+          </div>
+        </div>
       )}
     </section>
   );
