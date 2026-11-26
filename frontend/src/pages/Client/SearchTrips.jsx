@@ -1,7 +1,7 @@
 import CantonAutocomplete from '../../components/CantonAutocomplete.jsx';
 import BusDetails from '../../components/BusDetails.jsx';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, BusFront, CalendarDays, ChevronDown, ChevronUp, Search, SlidersHorizontal, Users } from 'lucide-react';
+import { ArrowLeftRight, ArrowRight, BusFront, CalendarDays, ChevronDown, ChevronUp, MapPin, RotateCcw, Search, SlidersHorizontal, Star, Users, X } from 'lucide-react';
 import { api, isDemo } from '../../lib/api.js';
 import { resolveMediaUrl } from '../../lib/env.js';
 import SupportChannels from '../../components/SupportChannels.jsx';
@@ -28,6 +28,7 @@ export default function SearchTrips({ onChoose }) {
   const [frequencies, setFrequencies] = useState([]);
   const [catalogTrips, setCatalogTrips] = useState([]);
   const [customSegments, setCustomSegments] = useState({});
+  const [openMaps, setOpenMaps] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [validation, setValidation] = useState('');
@@ -52,6 +53,7 @@ export default function SearchTrips({ onChoose }) {
     const controller = new AbortController();
     setLoading(true); setError('');
     setCustomSegments({});
+    setOpenMaps({});
     (async () => {
       try {
         const all = await api.trips(query.fecha, controller.signal);
@@ -74,9 +76,60 @@ export default function SearchTrips({ onChoose }) {
   }, [query]);
   const change = (event) => {
     const { name, value } = event.target;
-    setFilters(previous => ({ ...previous, [name]: value }));
+    setFilters(previous => {
+      const next = { ...previous, [name]: value };
+      if (['cooperativa', 'categoria', 'tipo_servicio'].includes(name)) {
+        const validPassengers = passengerCount(next.pasajeros);
+        const validTimes = !next.desde || !next.hasta || next.desde <= next.hasta;
+        if (validPassengers && validTimes) setQuery(next);
+      }
+      return next;
+    });
     setValidation('');
   };
+
+  const swapRoute = () => {
+    setFilters(previous => {
+      const next = { ...previous, origen: previous.destino, destino: previous.origen };
+      if (passengerCount(next.pasajeros) && (!next.desde || !next.hasta || next.desde <= next.hasta)) {
+        setQuery(next);
+      }
+      return next;
+    });
+    setValidation('');
+  };
+
+  const clearAllFilters = () => {
+    const next = initialFilters();
+    next.fecha = filters.fecha || today();
+    setFilters(next);
+    setQuery(next);
+    setValidation('');
+  };
+
+  const activeChips = useMemo(() => {
+    const chips = [];
+    if (query.origen) chips.push({ key: 'origen', label: `Origen: ${query.origen}`, reset: { origen: '' } });
+    if (query.destino) chips.push({ key: 'destino', label: `Destino: ${query.destino}`, reset: { destino: '' } });
+    if (query.cooperativa) chips.push({ key: 'cooperativa', label: query.cooperativa, reset: { cooperativa: '' } });
+    if (query.categoria) chips.push({ key: 'categoria', label: `Asiento ${query.categoria === 'VIP' ? 'VIP' : 'Normal'}`, reset: { categoria: '' } });
+    if (query.tipo_servicio) chips.push({ key: 'tipo_servicio', label: query.tipo_servicio === 'DIRECTO' ? 'Directo' : 'Con paradas', reset: { tipo_servicio: '' } });
+    if (query.marca_chasis) chips.push({ key: 'marca_chasis', label: `Chasis: ${query.marca_chasis}`, reset: { marca_chasis: '' } });
+    if (query.carroceria) chips.push({ key: 'carroceria', label: `Carrocería: ${query.carroceria}`, reset: { carroceria: '' } });
+    if (query.desde || query.hasta) {
+      chips.push({ key: 'horario', label: `Horario: ${query.desde || '00:00'}–${query.hasta || '23:59'}`, reset: { desde: '', hasta: '' } });
+    }
+    if (String(query.pasajeros) !== '1') chips.push({ key: 'pasajeros', label: `${query.pasajeros} pasajeros`, reset: { pasajeros: '1' } });
+    return chips;
+  }, [query]);
+
+  const removeChip = (chip) => {
+    const next = { ...filters, ...chip.reset };
+    setFilters(next);
+    setQuery(next);
+    setValidation('');
+  };
+
   const submit = (event) => {
     event.preventDefault();
     if (!passengerCount(filters.pasajeros)) { setValidation(`Indica entre 1 y ${MAX_PASSENGERS} pasajeros, sin decimales.`); return; }
@@ -104,8 +157,17 @@ export default function SearchTrips({ onChoose }) {
     <form onSubmit={submit} className="search-panel" aria-label="Buscar viajes">
       <div className="search-main">
         <CantonAutocomplete name="origen" label="Origen" value={filters.origen} options={origins} onChange={change} placeholder="¿De dónde sales?" />
+        <button
+          type="button"
+          className="swap-route-btn"
+          onClick={swapRoute}
+          aria-label="Intercambiar origen y destino"
+          title="Intercambiar origen y destino"
+        >
+          <ArrowLeftRight size={16} aria-hidden="true" />
+        </button>
         <CantonAutocomplete name="destino" label="Destino" value={filters.destino} options={destinations} onChange={change} placeholder="¿A dónde vamos?" />
-        <label><span><CalendarDays size={15} /> Fecha de viaje</span><input name="fecha" type="date" required min={today()} value={filters.fecha} onChange={change} /></label>
+        <label className="search-field-date"><span><CalendarDays size={15} /> Fecha de viaje</span><input name="fecha" type="date" required min={today()} value={filters.fecha} onChange={change} /></label>
         <label><span><Users size={15} /> Pasajeros</span><input name="pasajeros" type="number" required min="1" max={MAX_PASSENGERS} step="1" value={filters.pasajeros} onChange={change} /></label>
         <button className="button primary search-button" disabled={loading}><Search size={18} />{loading ? 'Buscando…' : 'Buscar viajes'}</button>
       </div>
@@ -113,17 +175,41 @@ export default function SearchTrips({ onChoose }) {
         <label><span className="sr-only">Cooperativa</span><select aria-label="Cooperativa" name="cooperativa" value={filters.cooperativa} onChange={change}><option value="">Todas las cooperativas</option>{operators.map(nombre => <option key={nombre} value={nombre}>{nombre}</option>)}</select></label>
         <label><span className="sr-only">Tipo de asiento</span><select aria-label="Tipo de asiento" name="categoria" value={filters.categoria} onChange={change}><option value="">Cualquier asiento</option><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label>
         <label><span className="sr-only">Tipo de viaje</span><select aria-label="Tipo de viaje" name="tipo_servicio" value={filters.tipo_servicio} onChange={change}><option value="">Todos los tipos de viaje</option><option value="DIRECTO">Directo</option><option value="PARADAS">Con paradas</option></select></label>
-        <button
-          type="button"
-          className={`search-advanced-toggle ${showAdvanced ? 'is-open' : ''}`}
-          aria-expanded={showAdvanced}
-          aria-controls="filtros-avanzados"
-          onClick={() => setShowAdvanced(open => !open)}
-        >
-          Filtros avanzados{advancedCount > 0 ? ` (${advancedCount})` : ''}
-          {showAdvanced ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
-        </button>
+        <div className="search-filter-actions">
+          {activeChips.length > 0 && (
+            <button type="button" className="clear-filters-btn" onClick={clearAllFilters}>
+              <RotateCcw size={13} aria-hidden="true" /> Limpiar todo
+            </button>
+          )}
+          <button
+            type="button"
+            className={`search-advanced-toggle ${showAdvanced ? 'is-open' : ''}`}
+            aria-expanded={showAdvanced}
+            aria-controls="filtros-avanzados"
+            onClick={() => setShowAdvanced(open => !open)}
+          >
+            Filtros avanzados{advancedCount > 0 ? ` (${advancedCount})` : ''}
+            {showAdvanced ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+          </button>
+        </div>
       </div>
+      {activeChips.length > 0 && (
+        <div className="active-filters-bar" aria-label="Filtros aplicados">
+          <span className="active-filters-title">Activos:</span>
+          {activeChips.map(chip => (
+            <button
+              key={chip.key}
+              type="button"
+              className="filter-chip"
+              onClick={() => removeChip(chip)}
+              title={`Quitar filtro ${chip.label}`}
+            >
+              <span>{chip.label}</span>
+              <X size={12} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
       {showAdvanced && (
         <div id="filtros-avanzados" className="search-filters search-advanced-filters">
           <label><span className="sr-only">Marca de chasis</span><select aria-label="Marca de chasis" name="marca_chasis" value={filters.marca_chasis} onChange={change}><option value="">Cualquier marca de chasis</option>{searchOptions([...chassis.map(marca_chasis => ({ marca_chasis })), { marca_chasis: filters.marca_chasis }], 'marca_chasis').map(value => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -136,7 +222,16 @@ export default function SearchTrips({ onChoose }) {
       {validation && <p className="inline-error search-help" role="alert">{validation}</p>}
     </form>
     <section className="results" aria-labelledby="results-heading" aria-busy={loading}>
-      <div className="section-heading"><div><p className="eyebrow">ELIGE CÓMO LLEGAR</p><h2 id="results-heading">Viajes disponibles</h2></div><span className="muted">{travelDate(query.fecha)}</span></div>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">ELIGE CÓMO LLEGAR</p>
+          <h2 id="results-heading">Viajes disponibles</h2>
+        </div>
+        <div className="results-meta">
+          {!loading && <span className="results-count-pill">{trips.length} {trips.length === 1 ? 'opción' : 'opciones'}</span>}
+          <span className="muted">{travelDate(query.fecha)}</span>
+        </div>
+      </div>
       <p className="sr-only" role="status">{loading ? 'Consultando viajes' : `${trips.length} viajes encontrados`}</p>
       {error ? <div className="notice error" role="alert"><h3>No pudimos mostrar los viajes</h3><p>{error}</p><button className="button secondary" onClick={() => setQuery({ ...query })}>Reintentar</button>{!isDemo && <a className="text-link" href="?demo=1">Explorar una demostración</a>}</div>
         : loading ? <div className="empty-state">Buscando tu próximo destino…</div>
@@ -176,7 +271,7 @@ export default function SearchTrips({ onChoose }) {
               </div>
             </div>
           )
-            : <><Suspense fallback={null}><RouteMap origen={trips[0]?.origen} destino={trips[0]?.destino} tipoServicio={trips[0]?.tipo_servicio} cooperativa={trips[0]?.cooperativa_nombre} paradasIntermedias={trips[0]?.paradas_intermedias} /></Suspense><div className="trip-list">{trips.map(trip => {
+            : <><div className="trip-list">{trips.map(trip => {
               const seg = resolveTripSegment(trip, query.origen, query.destino);
               const { itinerary, totalSegments } = seg;
               const custom = customSegments[trip.programacion_id];
@@ -185,115 +280,91 @@ export default function SearchTrips({ onChoose }) {
               const esTramo = startIdx > 0 || endIdx < itinerary.length - 1;
               const tramoOrigen = itinerary[startIdx] || trip.origen;
               const tramoDestino = itinerary[endIdx] || trip.destino;
+              const tramoParadas = itinerary.slice(startIdx + 1, endIdx);
+              const mapOpen = Boolean(openMaps[trip.programacion_id]);
               const precioFinal = esTramo
                 ? calculateSegmentPrice(trip.precio_base, totalSegments, endIdx - startIdx)
                 : Number(trip.precio_base);
 
               return (
-                <article className="trip-card" key={trip.programacion_id} style={trip.es_destacada ? { border: '2px solid #F59E0B', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.15)' } : undefined}>
+                <article className={`trip-card ${trip.es_destacada ? 'is-featured' : ''}`} key={trip.programacion_id}>
                   <div className="operator">
                     {trip.logo_url ? (
                       <img
                         key={`trip-logo-${trip.programacion_id}-${trip.logo_url}`}
                         src={resolveMediaUrl(trip.logo_url)}
                         alt={`Logo ${trip.cooperativa_nombre}`}
-                        style={{ width: 48, height: 48, borderRadius: '10px', objectFit: 'contain', background: '#FFFFFF', border: `2px solid ${trip.color_distintivo || '#CBD5E1'}`, padding: '3px', flexShrink: 0 }}
+                        className="operator-logo"
+                        style={{ borderColor: trip.color_distintivo || '#CBD5E1' }}
                         onLoad={(e) => { e.currentTarget.style.display = 'block'; }}
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     ) : (
                       <div
                         aria-label={`Emblema ${trip.cooperativa_nombre}`}
-                        style={{ width: 48, height: 48, borderRadius: '10px', background: trip.color_distintivo || '#1E40AF', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1rem', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.12)' }}
+                        className="operator-emblem"
+                        style={{ background: trip.color_distintivo || '#183f3d' }}
                       >
                         {String(trip.cooperativa_nombre || 'CO').slice(0, 2).toUpperCase()}
                       </div>
                     )}
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div className="operator-info">
+                      <div className="operator-title-row">
                         <h3>{trip.cooperativa_nombre}</h3>
                         {trip.es_destacada && (
-                          <span style={{ fontSize: '0.75rem', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
-                            ⭐ Ruta Destacada
-                          </span>
-                        )}
-                        {esTramo && (
-                          <span style={{ fontSize: '0.72rem', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
-                            🛣️ Tramo en ruta {trip.origen} ➔ {trip.destino}
+                          <span className="trip-badge-featured">
+                            <Star size={11} aria-hidden="true" /> Ruta Destacada
                           </span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', background: '#F1F5F9', border: '1px solid #CBD5E1', padding: '2px 10px', borderRadius: '6px' }}>
-                          🚌 UNIDAD #{trip.numero_disco}
-                        </span>
-                        <span className="muted" style={{ fontWeight: 600 }}>{trip.capacidad} asientos{trip.bus_layout?.pisos === 2 ? ' · 2 Pisos' : ''}</span>
-                        <button type="button" className="inline-link" aria-label={`Ver más del bus ${trip.numero_disco}`} onClick={() => setBusDetalle(trip)}>Ver más</button>
+                      <div className="operator-unit-row">
+                        <span className="unit-pill">Unidad #{trip.numero_disco}</span>
+                        <span className="muted">{trip.capacidad} asientos{trip.bus_layout?.pisos === 2 ? ' · 2 Pisos' : ''}</span>
+                        <button type="button" className="inline-link trip-details-link" aria-label={`Ver más del bus ${trip.numero_disco}`} onClick={() => setBusDetalle(trip)}>Ver más</button>
                       </div>
                     </div>
                   </div>
+
                   <div className="trip-route">
                     <strong>{shortTime(trip.hora_salida_programada)}</strong>
-                    <span>{tramoOrigen}</span>
-                    <ArrowRight size={22} className="route-arrow" />
-                    <span>{tramoDestino}</span>
-                  </div>
-                  {itinerary.length > 2 && (
-                    <div style={{ gridColumn: '1 / -1', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '0.82rem' }}>
-                      <strong style={{ color: '#334155' }}>📍 Seleccionar Tramo Intermedio:</strong>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', margin: 0 }}>
-                        <span style={{ color: '#64748B' }}>Subida:</span>
-                        <select
-                          value={startIdx}
-                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'startIdx', e.target.value, seg)}
-                          style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', fontSize: '0.82rem' }}
-                        >
-                          {itinerary.slice(0, -1).map((stop, idx) => (
-                            <option key={`start-${idx}`} value={idx}>{stop}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <span style={{ color: '#94A3B8' }}>➔</span>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', margin: 0 }}>
-                        <span style={{ color: '#64748B' }}>Bajada:</span>
-                        <select
-                          value={endIdx}
-                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'endIdx', e.target.value, seg)}
-                          style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', fontSize: '0.82rem' }}
-                        >
-                          {itinerary.map((stop, idx) => idx > startIdx ? (
-                            <option key={`end-${idx}`} value={idx}>{stop}</option>
-                          ) : null)}
-                        </select>
-                      </label>
-                      <span style={{ color: '#64748B', fontSize: '0.76rem', marginLeft: 'auto' }}>
-                        Itinerario completo: {itinerary.join(' ➔ ')}
+                    <div className="trip-route-badges">
+                      <span className={`service-type-badge ${String(trip.tipo_servicio || '').toUpperCase() === 'PARADAS' ? 'is-stops' : 'is-direct'}`}>
+                        {trip.tipo_servicio || 'Directo'}
                       </span>
+                      {esTramo && (
+                        <span className="trip-segment-pill">
+                          Tramo de {trip.origen} → {trip.destino}
+                        </span>
+                      )}
                     </div>
-                  )}
-                  <div className="trip-tags">
-                    <span> Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span>
-                    <span> Servicio: {trip.tipo_servicio || 'No registrado'}</span>
-                    {Array.isArray(trip.paradas_intermedias) && trip.paradas_intermedias.length > 0 && (
-                      <span> 📍 Paradas: {trip.paradas_intermedias.join(' ➔ ')}</span>
-                    )}
-                    <span>{trip.capacidad} asientos</span>
-                    <span>{trip.disponibles_busqueda} disponibles{query.categoria ? ` (${query.categoria === 'VIP' ? 'VIP' : 'Normal'})` : ''} · {query.pasajeros} {Number(query.pasajeros) === 1 ? 'pasajero' : 'pasajeros'}</span>
-                    <span>Chasis: {trip.marca_chasis || 'No registrado'}</span>
-                    <span>Carrocería: {trip.carroceria || 'No registrada'}</span>
-                    <span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span>
-                    <span>Normal / VIP</span>
+                    <div className="trip-route-track">
+                      <div className="route-point">
+                        <span className="route-dot origin" aria-hidden="true" />
+                        <span>{tramoOrigen}</span>
+                      </div>
+                      <div className="route-connector" aria-hidden="true">
+                        <span className="route-line-bar" />
+                        <span className="route-stops-caption">
+                          {tramoParadas.length > 0 ? `${tramoParadas.length} ${tramoParadas.length === 1 ? 'parada' : 'paradas'}` : 'Directo'}
+                        </span>
+                      </div>
+                      <div className="route-point end">
+                        <span className="route-dot dest" aria-hidden="true" />
+                        <span>{tramoDestino}</span>
+                      </div>
+                    </div>
                   </div>
+
                   <div className="trip-price">
-                    <span className="muted">{esTramo ? 'Tarifa proporcional tramo' : 'Tarifa base'}</span>
+                    <span className="muted">{esTramo ? 'Tarifa tramo' : 'Tarifa base'}</span>
                     <strong>{money(precioFinal)}</strong>
                     {esTramo && (
-                      <span style={{ fontSize: '0.74rem', color: '#64748B', textDecoration: 'line-through' }}>
+                      <span className="trip-price-original">
                         Ruta total: {money(trip.precio_base)}
                       </span>
                     )}
                     <button
-                      className="button primary"
+                      className="button primary trip-choose-btn"
                       onClick={() => onChoose({
                         ...trip,
                         origen: tramoOrigen,
@@ -308,7 +379,83 @@ export default function SearchTrips({ onChoose }) {
                     >
                       Elegir asientos <ArrowRight size={16} />
                     </button>
+                    <button
+                      type="button"
+                      className={`trip-map-toggle ${mapOpen ? 'is-open' : ''}`}
+                      aria-expanded={mapOpen}
+                      onClick={() => setOpenMaps(prev => ({ ...prev, [trip.programacion_id]: !prev[trip.programacion_id] }))}
+                    >
+                      <MapPin size={14} aria-hidden="true" />
+                      {mapOpen ? 'Ocultar mapa' : 'Ver mapa de ruta'}
+                    </button>
                   </div>
+
+                  {itinerary.length > 2 && (
+                    <div className="trip-segment-bar">
+                      <strong className="trip-segment-title"><MapPin size={13} aria-hidden="true" /> Tramo intermedio:</strong>
+                      <label className="trip-segment-select">
+                        <span>Subida:</span>
+                        <select
+                          value={startIdx}
+                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'startIdx', e.target.value, seg)}
+                        >
+                          {itinerary.slice(0, -1).map((stop, idx) => (
+                            <option key={`start-${idx}`} value={idx}>{stop}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <span className="trip-segment-arrow" aria-hidden="true">→</span>
+                      <label className="trip-segment-select">
+                        <span>Bajada:</span>
+                        <select
+                          value={endIdx}
+                          onChange={(e) => handleSegmentChange(trip.programacion_id, itinerary.length, 'endIdx', e.target.value, seg)}
+                        >
+                          {itinerary.map((stop, idx) => idx > startIdx ? (
+                            <option key={`end-${idx}`} value={idx}>{stop}</option>
+                          ) : null)}
+                        </select>
+                      </label>
+                      <span className="trip-itinerary-inline">
+                        {itinerary.join(' · ')}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="trip-footer-meta">
+                    <div className="trip-badges-primary">
+                      <span className="pill-availability">
+                        {trip.disponibles_busqueda} disponibles{query.categoria ? ` (${query.categoria === 'VIP' ? 'VIP' : 'Normal'})` : ''} · {query.pasajeros} {Number(query.pasajeros) === 1 ? 'pasajero' : 'pasajeros'}
+                      </span>
+                      <span className="pill">Normal / VIP</span>
+                      {Array.isArray(trip.paradas_intermedias) && trip.paradas_intermedias.length > 0 && (
+                        <span className="pill">Paradas: {trip.paradas_intermedias.join(' · ')}</span>
+                      )}
+                    </div>
+                    <div className="trip-specs-line">
+                      <span>Resolución ANT: {trip.resolucion_ant || 'No registrada'}</span>
+                      <span>Chasis: {trip.marca_chasis || 'No registrado'}</span>
+                      <span>Carrocería: {trip.carroceria || 'No registrada'}</span>
+                      <span>{trip.tiene_bano_posterior === true ? 'Baño posterior' : trip.tiene_bano_posterior === false ? 'Sin baño posterior' : 'Baño posterior: no registrado'}</span>
+                    </div>
+                  </div>
+
+                  {mapOpen && (
+                    <div className="trip-map-drawer" style={{ gridColumn: '1 / -1' }}>
+                      <Suspense fallback={<p className="muted" style={{ margin: '0.5rem 0' }}>Cargando mapa de ruta...</p>}>
+                        <RouteMap
+                          origen={tramoOrigen}
+                          destino={tramoDestino}
+                          tipoServicio={trip.tipo_servicio}
+                          cooperativa={trip.cooperativa_nombre}
+                          numeroDisco={trip.numero_disco}
+                          horaSalida={shortTime(trip.hora_salida_programada)}
+                          paradasIntermedias={tramoParadas}
+                          compact
+                        />
+                      </Suspense>
+                    </div>
+                  )}
                 </article>
               );
             })}</div>

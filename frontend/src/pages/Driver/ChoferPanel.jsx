@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import jsQR from 'jsqr';
 import { shortTime, today } from '../../lib/format.js';
 import { API_BASE } from '../../lib/env.js';
 import { 
   Bus, QrCode, CheckCircle2, AlertTriangle, XCircle, Play, CheckCheck, 
-  RefreshCw, Volume2, VolumeX, Camera, Search, Upload, LogOut
+  RefreshCw, Volume2, VolumeX, Camera, Search, Upload, LogOut, MapPin
 } from 'lucide-react';
+
+const RouteMap = lazy(() => import('../../components/RouteMap.jsx'));
 
 const getApiBase = () => API_BASE;
 
@@ -62,6 +64,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
   const [filtroPasajeros, setFiltroPasajeros] = useState('TODOS'); // TODOS, VALIDADOS, PENDIENTES
   const [busquedaTexto, setBusquedaTexto] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [mostrarMapaRuta, setMostrarMapaRuta] = useState(false);
 
   // Filtros operativos del chofer (bloqueados y autoasignados si es Chofer con unidad)
   const [coopSeleccionada, setCoopSeleccionada] = useState(
@@ -82,6 +85,7 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
 
   useEffect(() => {
     viajeSeleccionadoRef.current = viajeSeleccionado;
+    setMostrarMapaRuta(false);
   }, [viajeSeleccionado]);
 
   const authHeaders = (extra = {}) => ({
@@ -753,7 +757,28 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
             </div>
 
             {/* Controles de Viaje: Iniciar y Finalizar (Exigencia RUTA-16 del Docente) */}
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                type="button"
+                aria-expanded={mostrarMapaRuta}
+                onClick={() => setMostrarMapaRuta(v => !v)}
+                style={{
+                  background: mostrarMapaRuta ? '#ecfdf5' : '#f8fafc',
+                  color: '#0f766e',
+                  border: '1px solid #99f6e4',
+                  borderRadius: '10px',
+                  padding: '0.7rem 1rem',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem'
+                }}
+              >
+                <MapPin size={17} />
+                {mostrarMapaRuta ? 'Ocultar mapa' : 'Ver mapa de ruta'}
+              </button>
               {viajeSeleccionado.estado === 'PROGRAMADO' && (
                 <button
                   onClick={() => handleIniciarViaje(viajeSeleccionado.id)}
@@ -814,6 +839,23 @@ export default function ChoferPanel({ usuario = null, onVolverInicio, onLogout }
               )}
             </div>
           </div>
+
+          {mostrarMapaRuta && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <Suspense fallback={<p style={{ color: '#64748b', fontSize: '0.85rem' }}>Cargando mapa de ruta...</p>}>
+                <RouteMap
+                  origen={viajeSeleccionado.origen}
+                  destino={viajeSeleccionado.destino}
+                  tipoServicio={viajeSeleccionado.tipo_servicio}
+                  cooperativa={viajeSeleccionado.cooperativa_nombre}
+                  numeroDisco={viajeSeleccionado.numero_disco}
+                  horaSalida={shortTime(viajeSeleccionado.hora_salida_programada)}
+                  paradasIntermedias={viajeSeleccionado.paradas_intermedias}
+                  compact
+                />
+              </Suspense>
+            </div>
+          )}
 
           {/* 4. Escáner QR de Boletos en Puerta (VENT-05) */}
           <div style={{
